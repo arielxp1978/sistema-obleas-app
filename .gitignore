@@ -1,0 +1,8 @@
+node_modules/
+data/
+uploads/
+*.log
+.DS_Store
+.env
+*.csv
+package-lock.json

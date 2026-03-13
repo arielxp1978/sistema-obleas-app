@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Login - Sistema de Obleas GNC</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:'Segoe UI',system-ui,sans-serif; background:linear-gradient(135deg,#1a73e8 0%,#4285f4 50%,#669df6 100%); min-height:100vh; display:flex; align-items:center; justify-content:center; }
+.login-card { background:#fff; border-radius:12px; padding:40px; width:380px; box-shadow:0 8px 40px rgba(0,0,0,.2); text-align:center; }
+.login-card h1 { font-size:1.4em; color:#202124; margin-bottom:6px; }
+.login-card .subtitle { font-size:.85em; color:#5f6368; margin-bottom:28px; }
+.form-group { text-align:left; margin-bottom:16px; }
+.form-group label { display:block; font-size:.85em; font-weight:500; color:#5f6368; margin-bottom:6px; }
+.form-group input { width:100%; padding:12px 14px; border:1px solid #dadce0; border-radius:8px; font-size:1em; transition:.2s; }
+.form-group input:focus { outline:none; border-color:#1a73e8; box-shadow:0 0 0 3px rgba(26,115,232,.15); }
+.btn { width:100%; padding:12px; background:#1a73e8; color:#fff; border:none; border-radius:8px; font-size:1em; font-weight:500; cursor:pointer; transition:.2s; }
+.btn:hover { background:#1557b0; }
+.error { color:#ea4335; font-size:.85em; margin-top:12px; display:none; }
+.logo { font-size:2.2em; margin-bottom:12px; }
+</style>
+</head>
+<body>
+<div class="login-card">
+  <div class="logo">🔧</div>
+  <h1>Nova GNC</h1>
+  <p class="subtitle">Sistema de Gestión de Obleas</p>
+  <form onsubmit="login(event)">
+    <div class="form-group">
+      <label>Clave de acceso</label>
+      <input type="password" id="clave" placeholder="Ingresá la clave" autofocus>
+    </div>
+    <button type="submit" class="btn">Ingresar</button>
+    <p class="error" id="error">Clave incorrecta</p>
+  </form>
+</div>
+<script>
+async function login(e) {
+  e.preventDefault();
+  const clave = document.getElementById('clave').value;
+  try {
+    const resp = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ clave })
+    });
+    const data = await resp.json();
+    if (data.ok) {
+      document.cookie = `token=${data.token}; path=/; max-age=86400; SameSite=Strict`;
+      window.location.href = '/';
+    } else {
+      document.getElementById('error').style.display = 'block';
+      document.getElementById('clave').value = '';
+      document.getElementById('clave').focus();
+    }
+  } catch (err) {
+    document.getElementById('error').textContent = 'Error de conexión';
+    document.getElementById('error').style.display = 'block';
+  }
+}
+</script>
+</body>
+</html>

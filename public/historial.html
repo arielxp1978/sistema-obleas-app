@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Historial General - Nova GNC</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root {
+  --primary: #1a73e8; --primary-dark: #1557b0; --success: #34a853;
+  --warning: #f9ab00; --danger: #ea4335; --bg: #f8f9fa;
+  --card: #fff; --text: #202124; --text-sec: #5f6368;
+  --border: #dadce0; --radius: 8px;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); }
+header { background: linear-gradient(135deg, #1a73e8, #4285f4); color:#fff; padding:16px 24px; display:flex; justify-content:space-between; align-items:center; box-shadow:0 2px 8px rgba(0,0,0,.15); }
+header h1 { font-size:1.3em; font-weight:600; }
+header a { color:#fff; background:rgba(255,255,255,.15); border:1px solid rgba(255,255,255,.3); padding:6px 14px; border-radius:20px; text-decoration:none; font-size:.85em; transition:.2s; }
+header a:hover { background:rgba(255,255,255,.3); }
+.container { max-width:1400px; margin:0 auto; padding:20px; }
+.card { background:var(--card); border-radius:var(--radius); border:1px solid var(--border); padding:20px; margin-bottom:16px; box-shadow:0 1px 3px rgba(0,0,0,.05); }
+.card h3 { font-size:1.05em; color:var(--text); margin-bottom:12px; padding-bottom:8px; border-bottom:1px solid #eee; }
+.metrics-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:12px; margin-bottom:20px; }
+.metric-card { background:linear-gradient(135deg,#f8f9fa,#fff); border:1px solid var(--border); border-radius:var(--radius); padding:20px; text-align:center; }
+.metric-card .value { font-size:2em; font-weight:700; color:var(--primary); }
+.metric-card .label { font-size:.85em; color:var(--text-sec); margin-top:4px; }
+.charts-row { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px; }
+@media(max-width:768px) { .charts-row { grid-template-columns:1fr; } }
+table { width:100%; border-collapse:collapse; font-size:.85em; }
+th, td { padding:10px 12px; text-align:left; border-bottom:1px solid #eee; }
+th { background:#f8f9fa; font-weight:600; color:var(--text-sec); font-size:.8em; text-transform:uppercase; }
+tr:hover { background:#f8f9fa; }
+.table-wrap { max-height:500px; overflow:auto; border:1px solid var(--border); border-radius:var(--radius); }
+.badge { display:inline-block; padding:2px 10px; border-radius:12px; font-size:.75em; font-weight:600; }
+.badge-ok { background:#e6f4ea; color:#1e8e3e; }
+.badge-leve { background:#fef7e0; color:#e37400; }
+.badge-rechazar { background:#fce8e6; color:#c5221f; }
+.empty { text-align:center; padding:60px 20px; color:var(--text-sec); }
+.empty h2 { margin-bottom:8px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Historial General — Nova GNC</h1>
+  <a href="/">← Volver al Dashboard</a>
+</header>
+
+<div class="container" id="content">
+  <div class="empty" id="emptyMsg"><h2>Cargando historial...</h2></div>
+</div>
+
+<script>
+function getToken() { const m = document.cookie.match(/token=([a-f0-9]{64})/); return m ? m[1] : null; }
+async function authFetch(url, opts = {}) {
+  if (!opts.headers) opts.headers = {};
+  const t = getToken(); if (t) opts.headers['Authorization'] = 'Bearer ' + t;
+  const r = await fetch(url, opts);
+  if (r.status === 401) { window.location.href = '/login'; return null; }
+  return r;
+}
+
+let charts = {};
+function destroyChart(k) { if (charts[k]) { charts[k].destroy(); delete charts[k]; } }
+
+async function cargar() {
+  try {
+    const resp = await authFetch('/api/historial');
+    if (!resp) return;
+    const h = await resp.json();
+
+    if (!h.totalPeriodos) {
+      document.getElementById('emptyMsg').innerHTML = '<h2>Sin datos</h2><p>Todavía no hay períodos guardados. Procesá y guardá al menos un período desde el dashboard.</p>';
+      return;
+    }
+
+    document.getElementById('emptyMsg').style.display = 'none';
+    const c = document.getElementById('content');
+
+    // Metrics
+    const ac = h.acumulado;
+    c.innerHTML += `
+    <div class="metrics-grid">
+      <div class="metric-card"><div class="value">${h.totalPeriodos}</div><div class="label">Períodos Procesados</div></div>
+      <div class="metric-card"><div class="value">${ac.totalRegistrosOriginal}</div><div class="label">Total Registros Original</div></div>
+      <div class="metric-card"><div class="value">${ac.totalRegistrosFiltrado}</div><div class="label">Total Filtrados</div></div>
+      <div class="metric-card"><div class="value" style="color:var(--success)">${ac.normalizacion.OK || 0}</div><div class="label">Teléfonos OK (acum.)</div></div>
+      <div class="metric-card"><div class="value" style="color:var(--warning)">${ac.normalizacion.LEVE || 0}</div><div class="label">Error Leve (acum.)</div></div>
+      <div class="metric-card"><div class="value" style="color:var(--danger)">${ac.normalizacion.RECHAZAR || 0}</div><div class="label">Rechazados (acum.)</div></div>
+    </div>`;
+
+    // Charts section
+    c.innerHTML += `
+    <div class="charts-row">
+      <div class="card"><h3>Evolución de Registros por Período</h3><canvas id="chartEvol"></canvas></div>
+      <div class="card"><h3>Normalización Acumulada</h3><canvas id="chartNorm"></canvas></div>
+    </div>
+    <div class="charts-row">
+      <div class="card"><h3>Verificación Acumulada</h3><canvas id="chartVerif"></canvas></div>
+      <div class="card"><h3>Evolución de Normalización</h3><canvas id="chartNormEvol"></canvas></div>
+    </div>`;
+
+    // Periods table
+    let ptHtml = '<table><thead><tr><th>Período</th><th>Versión</th><th>Guardado</th><th>Original</th><th>Filtrado</th><th>OK</th><th>Leve</th><th>Rechazar</th></tr></thead><tbody>';
+    h.periodos.forEach(p => {
+      const n = p.resumen.normalizacion || {};
+      ptHtml += `<tr><td><strong>${p.periodoId}</strong></td><td>v${p.version}</td><td>${new Date(p.guardadoEn).toLocaleString('es-AR')}</td><td>${p.resumen.totalOriginal}</td><td>${p.resumen.totalFiltrado}</td><td>${n.OK||0}</td><td>${n.LEVE||0}</td><td>${n.RECHAZAR||0}</td></tr>`;
+    });
+    ptHtml += '</tbody></table>';
+    c.innerHTML += `<div class="card"><h3>Períodos</h3><div class="table-wrap">${ptHtml}</div></div>`;
+
+    // User ranking
+    if (Object.keys(ac.porUsuario).length) {
+      const users = Object.entries(ac.porUsuario).sort((a, b) => {
+        const pctA = (a[1].sin + a[1].mal) / Math.max(a[1].total, 1);
+        const pctB = (b[1].sin + b[1].mal) / Math.max(b[1].total, 1);
+        return pctB - pctA;
+      });
+      let uHtml = '<table><thead><tr><th>#</th><th>Usuario</th><th>Total</th><th>OK</th><th>Mal</th><th>Sin</th><th>% Error</th></tr></thead><tbody>';
+      users.forEach(([u, d], i) => {
+        const pct = Math.round((d.sin + d.mal) / Math.max(d.total, 1) * 1000) / 10;
+        const color = pct > 50 ? 'var(--danger)' : pct > 20 ? 'var(--warning)' : 'var(--success)';
+        uHtml += `<tr><td>${i+1}</td><td><strong>${u}</strong></td><td>${d.total}</td><td>${d.ok}</td><td>${d.mal}</td><td>${d.sin}</td><td style="color:${color};font-weight:700;">${pct}%</td></tr>`;
+      });
+      uHtml += '</tbody></table>';
+      c.innerHTML += `<div class="card"><h3>Ranking Acumulado de Usuarios</h3><div class="table-wrap">${uHtml}</div></div>`;
+    }
+
+    // Render charts
+    const evol = ac.evolucion;
+
+    charts.evol = new Chart(document.getElementById('chartEvol'), {
+      type: 'bar',
+      data: {
+        labels: evol.map(e => e.periodo),
+        datasets: [
+          { label: 'Original', data: evol.map(e => e.original), backgroundColor: '#4285f4' },
+          { label: 'Filtrado', data: evol.map(e => e.filtrado), backgroundColor: '#34a853' }
+        ]
+      },
+      options: { responsive: true, scales: { y: { beginAtZero: true } } }
+    });
+
+    charts.norm = new Chart(document.getElementById('chartNorm'), {
+      type: 'doughnut',
+      data: {
+        labels: ['OK', 'Leve', 'Rechazar'],
+        datasets: [{ data: [ac.normalizacion.OK||0, ac.normalizacion.LEVE||0, ac.normalizacion.RECHAZAR||0], backgroundColor: ['#34a853','#fbbc04','#ea4335'] }]
+      },
+      options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
+    });
+
+    const verifLabels = { NUESTRO_PEC_NUESTRO_TALLER: 'Nuestro PEC+Taller', NUESTRO_PEC_OTRO_TALLER: 'Nuestro PEC+Ext.', OTRO_PEC: 'Otro PEC', NO_RENOVO: 'No Renovó' };
+    const verifColors = ['#34a853','#4285f4','#fbbc04','#ea4335'];
+    const vKeys = Object.keys(ac.verificacion).filter(k => ac.verificacion[k] > 0);
+
+    if (vKeys.length) {
+      charts.verif = new Chart(document.getElementById('chartVerif'), {
+        type: 'doughnut',
+        data: {
+          labels: vKeys.map(k => verifLabels[k] || k),
+          datasets: [{ data: vKeys.map(k => ac.verificacion[k]), backgroundColor: verifColors.slice(0, vKeys.length) }]
+        },
+        options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
+      });
+    }
+
+    charts.normEvol = new Chart(document.getElementById('chartNormEvol'), {
+      type: 'line',
+      data: {
+        labels: evol.map(e => e.periodo),
+        datasets: [
+          { label: 'OK', data: evol.map(e => e.normalizacion.OK || 0), borderColor: '#34a853', fill: false, tension: 0.3 },
+          { label: 'Leve', data: evol.map(e => e.normalizacion.LEVE || 0), borderColor: '#fbbc04', fill: false, tension: 0.3 },
+          { label: 'Rechazar', data: evol.map(e => e.normalizacion.RECHAZAR || 0), borderColor: '#ea4335', fill: false, tension: 0.3 }
+        ]
+      },
+      options: { responsive: true, scales: { y: { beginAtZero: true } } }
+    });
+
+  } catch (e) {
+    document.getElementById('emptyMsg').innerHTML = `<h2>Error</h2><p>${e.message}</p>`;
+  }
+}
+
+cargar();
+</script>
+</body>
+</html>

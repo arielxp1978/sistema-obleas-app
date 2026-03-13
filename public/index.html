@@ -1,0 +1,866 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sistema de Obleas GNC - Nova GNC</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+:root {
+  --primary: #1a73e8; --primary-dark: #1557b0; --success: #34a853;
+  --warning: #f9ab00; --danger: #ea4335; --bg: #f8f9fa;
+  --card: #fff; --text: #202124; --text-sec: #5f6368;
+  --border: #dadce0; --radius: 8px;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); }
+header { background: linear-gradient(135deg, #1a73e8, #4285f4); color:#fff; padding:16px 24px; display:flex; justify-content:space-between; align-items:center; box-shadow:0 2px 8px rgba(0,0,0,.15); }
+header h1 { font-size:1.3em; font-weight:600; }
+header .links { display:flex; gap:12px; align-items:center; }
+header .links a, header .links button { color:#fff; background:rgba(255,255,255,.15); border:1px solid rgba(255,255,255,.3); padding:6px 14px; border-radius:20px; cursor:pointer; font-size:.85em; text-decoration:none; transition:.2s; }
+header .links a:hover, header .links button:hover { background:rgba(255,255,255,.3); }
+.tabs { display:flex; background:#fff; border-bottom:2px solid var(--border); padding:0 16px; overflow-x:auto; }
+.tab { padding:12px 20px; cursor:pointer; font-size:.9em; color:var(--text-sec); border-bottom:3px solid transparent; white-space:nowrap; transition:.2s; }
+.tab:hover { color:var(--primary); background:#f0f6ff; }
+.tab.active { color:var(--primary); border-bottom-color:var(--primary); font-weight:600; }
+.tab-content { display:none; padding:20px; max-width:1400px; margin:0 auto; }
+.tab-content.active { display:block; }
+.card { background:var(--card); border-radius:var(--radius); border:1px solid var(--border); padding:20px; margin-bottom:16px; box-shadow:0 1px 3px rgba(0,0,0,.05); }
+.card h3 { font-size:1.05em; color:var(--text); margin-bottom:12px; padding-bottom:8px; border-bottom:1px solid #eee; }
+.metrics-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px; margin-bottom:16px; }
+.metric-card { background:linear-gradient(135deg,#f8f9fa,#fff); border:1px solid var(--border); border-radius:var(--radius); padding:16px; text-align:center; }
+.metric-card .value { font-size:1.8em; font-weight:700; color:var(--primary); }
+.metric-card .label { font-size:.8em; color:var(--text-sec); margin-top:4px; }
+.upload-zone { border:2px dashed var(--border); border-radius:var(--radius); padding:40px; text-align:center; cursor:pointer; transition:.2s; background:#fafbfc; }
+.upload-zone:hover { border-color:var(--primary); background:#f0f6ff; }
+.upload-zone.dragover { border-color:var(--primary); background:#e8f0fe; }
+.upload-zone input { display:none; }
+.btn { padding:8px 18px; border:none; border-radius:6px; cursor:pointer; font-size:.9em; font-weight:500; transition:.2s; display:inline-flex; align-items:center; gap:6px; }
+.btn-primary { background:var(--primary); color:#fff; }
+.btn-primary:hover { background:var(--primary-dark); }
+.btn-success { background:var(--success); color:#fff; }
+.btn-danger { background:var(--danger); color:#fff; }
+.btn-warning { background:var(--warning); color:#fff; }
+.btn:disabled { opacity:.5; cursor:not-allowed; }
+table { width:100%; border-collapse:collapse; font-size:.85em; }
+th, td { padding:8px 10px; text-align:left; border-bottom:1px solid #eee; }
+th { background:#f8f9fa; font-weight:600; color:var(--text-sec); font-size:.8em; text-transform:uppercase; position:sticky; top:0; z-index:1; }
+tr:hover { background:#f8f9fa; }
+.table-wrap { max-height:500px; overflow:auto; border:1px solid var(--border); border-radius:var(--radius); }
+.badge { display:inline-block; padding:2px 10px; border-radius:12px; font-size:.75em; font-weight:600; }
+.badge-ok { background:#e6f4ea; color:#1e8e3e; }
+.badge-leve { background:#fef7e0; color:#e37400; }
+.badge-rechazar { background:#fce8e6; color:#c5221f; }
+.badge-pendiente { background:#e8eaed; color:#5f6368; }
+input[type=text], input[type=number], input[type=password], select {
+  padding:8px 12px; border:1px solid var(--border); border-radius:6px; font-size:.9em; width:100%;
+}
+input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 2px rgba(26,115,232,.15); }
+.form-group { margin-bottom:12px; }
+.form-group label { display:block; font-size:.85em; font-weight:500; margin-bottom:4px; color:var(--text-sec); }
+.progress-bar { height:8px; background:#e8eaed; border-radius:4px; overflow:hidden; }
+.progress-bar .fill { height:100%; background:var(--primary); transition:width .3s; border-radius:4px; }
+.log-box { background:#1e1e1e; color:#d4d4d4; padding:12px; border-radius:var(--radius); font-family:'Cascadia Code',monospace; font-size:.8em; max-height:300px; overflow-y:auto; line-height:1.6; }
+.log-ok { color:#4ec9b0; } .log-err { color:#f44747; } .log-warn { color:#dcdcaa; }
+.flex { display:flex; } .gap-2 { gap:8px; } .gap-4 { gap:16px; }
+.items-center { align-items:center; } .justify-between { justify-content:space-between; }
+.mb-2 { margin-bottom:8px; } .mb-4 { margin-bottom:16px; }
+.text-center { text-align:center; }
+.charts-row { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+@media(max-width:768px) { .charts-row { grid-template-columns:1fr; } }
+.filter-bar { display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap; align-items:center; }
+.filter-bar select { width:auto; min-width:150px; }
+.phone-input { width:120px; padding:4px 8px; font-size:.85em; border:1px solid var(--border); border-radius:4px; }
+.phone-input.modified { border-color:var(--primary); background:#f0f6ff; }
+.spinner { display:inline-block; width:16px; height:16px; border:2px solid rgba(255,255,255,.3); border-top-color:#fff; border-radius:50%; animation:spin .6s linear infinite; }
+@keyframes spin { to { transform:rotate(360deg); } }
+.hidden { display:none !important; }
+.file-card { display:flex; justify-content:space-between; align-items:center; padding:12px 16px; border:1px solid var(--border); border-radius:var(--radius); margin-bottom:8px; background:#fff; }
+.file-card .file-info { font-weight:500; }
+.file-card .file-meta { font-size:.8em; color:var(--text-sec); }
+.alert { padding:12px 16px; border-radius:var(--radius); margin-bottom:12px; font-size:.9em; }
+.alert-info { background:#e8f0fe; color:#1a73e8; border:1px solid #c5d9f5; }
+.alert-success { background:#e6f4ea; color:#1e8e3e; border:1px solid #b7e1cd; }
+.alert-warning { background:#fef7e0; color:#e37400; border:1px solid #fdd663; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Sistema de Obleas GNC — Nova GNC</h1>
+  <div class="links">
+    <button onclick="guardarPeriodo()" id="btnGuardar" class="hidden">Guardar Período</button>
+    <a href="/historial.html">Historial General</a>
+    <button onclick="cerrarSesion()" style="background:rgba(234,67,53,.3);border-color:rgba(234,67,53,.5);">Salir</button>
+  </div>
+</header>
+
+<div class="tabs" id="tabs">
+  <div class="tab active" data-tab="upload">Subir Archivo</div>
+  <div class="tab" data-tab="original">Original</div>
+  <div class="tab" data-tab="filtrado">Filtrado</div>
+  <div class="tab" data-tab="telefonos">Revisar Teléfonos</div>
+  <div class="tab" data-tab="ranking">Ranking Usuarios</div>
+  <div class="tab" data-tab="archivos">Descargar Archivos</div>
+  <div class="tab" data-tab="verificacion">Verificación Post-Envío</div>
+  <div class="tab" data-tab="config">Configuración</div>
+</div>
+
+<!-- ==================== SUBIR ARCHIVO ==================== -->
+<div class="tab-content active" id="tc-upload">
+  <div class="card">
+    <h3>Subir CSV de ENARGAS</h3>
+    <div class="upload-zone" id="uploadZone">
+      <input type="file" id="fileInput" accept=".csv,.txt">
+      <p style="font-size:1.1em;margin-bottom:8px;">Arrastrá o hacé clic para subir el archivo CSV</p>
+      <p style="font-size:.85em;color:var(--text-sec);">Formato: CSV separado por punto y coma (;) exportado de ENARGAS</p>
+    </div>
+    <div id="uploadProgress" class="hidden" style="margin-top:16px;">
+      <div class="flex items-center gap-2 mb-2">
+        <div class="spinner"></div>
+        <span>Procesando archivo...</span>
+      </div>
+      <div class="progress-bar"><div class="fill" style="width:0%"></div></div>
+    </div>
+  </div>
+  <div id="periodosCargados" class="card hidden">
+    <h3>Períodos Guardados</h3>
+    <div id="listaPeriodos"></div>
+  </div>
+</div>
+
+<!-- ==================== ORIGINAL ==================== -->
+<div class="tab-content" id="tc-original">
+  <div class="metrics-grid" id="metricsOriginal"></div>
+  <div class="charts-row">
+    <div class="card"><h3>Distribución por TCODTAL</h3><canvas id="chartTcodtalOrig"></canvas></div>
+    <div class="card"><h3>Estado de Teléfonos</h3><canvas id="chartTelOrig"></canvas></div>
+  </div>
+  <div class="card" style="margin-top:16px;">
+    <h3>Detalle por Usuario (GNCOBS1)</h3>
+    <div class="table-wrap" id="tablaUsuariosOrig"></div>
+  </div>
+</div>
+
+<!-- ==================== FILTRADO ==================== -->
+<div class="tab-content" id="tc-filtrado">
+  <div class="metrics-grid" id="metricsFiltrado"></div>
+  <div class="charts-row">
+    <div class="card"><h3>Distribución por TCODTAL</h3><canvas id="chartTcodtalFilt"></canvas></div>
+    <div class="card"><h3>Normalización de Teléfonos</h3><canvas id="chartNormFilt"></canvas></div>
+  </div>
+  <div class="card" style="margin-top:16px;">
+    <h3>Detalle por Usuario (GNCOBS1)</h3>
+    <div class="table-wrap" id="tablaUsuariosFilt"></div>
+  </div>
+</div>
+
+<!-- ==================== REVISAR TELÉFONOS ==================== -->
+<div class="tab-content" id="tc-telefonos">
+  <div class="card">
+    <div class="flex justify-between items-center mb-4">
+      <h3 style="border:none;margin:0;padding:0;">Revisión de Teléfonos</h3>
+      <div class="filter-bar" style="margin:0;">
+        <select id="filtroEstado">
+          <option value="TODOS">Todos</option>
+          <option value="LEVE" selected>Solo errores leves</option>
+          <option value="RECHAZAR">Solo rechazados</option>
+          <option value="OK">Solo OK</option>
+        </select>
+        <select id="filtroUsuario"><option value="">Todos los usuarios</option></select>
+        <span id="contadorTel" style="font-size:.85em;color:var(--text-sec);"></span>
+      </div>
+    </div>
+    <div class="alert alert-info mb-4">
+      Editá el campo <strong>Número Final</strong> para corregir teléfonos con error leve.
+      Los números con 10 dígitos se marcarán automáticamente como OK.
+    </div>
+    <div class="table-wrap" id="tablaTelefonos" style="max-height:600px;"></div>
+  </div>
+</div>
+
+<!-- ==================== RANKING USUARIOS ==================== -->
+<div class="tab-content" id="tc-ranking">
+  <div class="card">
+    <h3>Ranking de Usuarios por % de Error en Teléfonos</h3>
+    <div class="table-wrap" id="tablaRanking"></div>
+  </div>
+  <div class="card">
+    <canvas id="chartRanking" height="300"></canvas>
+  </div>
+</div>
+
+<!-- ==================== DESCARGAR ARCHIVOS ==================== -->
+<div class="tab-content" id="tc-archivos">
+  <div class="card">
+    <div class="flex justify-between items-center mb-4">
+      <h3 style="border:none;margin:0;padding:0;">Archivos Generados</h3>
+      <div class="flex gap-2">
+        <button class="btn btn-primary" onclick="regenerarArchivos()">Regenerar con Ediciones</button>
+        <button class="btn btn-success" onclick="descargarZip()">Descargar ZIP</button>
+      </div>
+    </div>
+    <div id="listaArchivos"></div>
+  </div>
+</div>
+
+<!-- ==================== VERIFICACIÓN POST-ENVÍO ==================== -->
+<div class="tab-content" id="tc-verificacion">
+  <div class="card">
+    <h3>Verificación contra API ENARGAS</h3>
+    <div class="flex gap-4 items-center mb-4">
+      <button class="btn btn-primary" id="btnIniciarVerif" onclick="iniciarVerificacion()">Iniciar Verificación</button>
+      <button class="btn btn-warning hidden" id="btnPausarVerif" onclick="pausarVerificacion()">Pausar</button>
+      <span id="verifStatus" style="font-size:.9em;color:var(--text-sec);"></span>
+    </div>
+    <div class="progress-bar mb-4" id="verifProgress" style="display:none;">
+      <div class="fill" id="verifProgressFill"></div>
+    </div>
+    <div class="log-box mb-4" id="verifLog" style="display:none;"></div>
+  </div>
+  <div class="card hidden" id="verifResultados">
+    <h3>Resultados de Verificación</h3>
+    <div class="metrics-grid" id="verifMetrics"></div>
+    <div class="charts-row mb-4">
+      <div class="card"><canvas id="chartVerif"></canvas></div>
+    </div>
+    <div class="flex gap-2 mb-4">
+      <button class="btn btn-success" onclick="exportarVerifCSV()">Exportar CSV</button>
+    </div>
+    <div class="table-wrap" id="tablaVerif" style="max-height:500px;"></div>
+  </div>
+</div>
+
+<!-- ==================== CONFIGURACIÓN ==================== -->
+<div class="tab-content" id="tc-config">
+  <div class="card" style="max-width:600px;">
+    <h3>Configuración del Sistema</h3>
+    <div class="form-group">
+      <label>URL de API ENARGAS</label>
+      <input type="text" id="cfgApiUrl">
+    </div>
+    <div class="form-group">
+      <label>API Key</label>
+      <input type="password" id="cfgApiKey">
+    </div>
+    <div class="form-group">
+      <label>Delay entre consultas (ms)</label>
+      <input type="number" id="cfgDelay" value="500">
+    </div>
+    <div class="form-group">
+      <label>Códigos PEC Propios (separados por coma)</label>
+      <input type="text" id="cfgPec">
+    </div>
+    <div class="form-group">
+      <label>Códigos Taller Propios (separados por coma)</label>
+      <input type="text" id="cfgTaller">
+    </div>
+    <div class="flex gap-2" style="margin-top:16px;">
+      <button class="btn btn-primary" onclick="guardarConfig()">Guardar Configuración</button>
+      <span id="cfgMsg" style="font-size:.85em;color:var(--success);"></span>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// AUTH HELPERS
+// ============================================================
+function getToken() {
+  const m = document.cookie.match(/token=([a-f0-9]{64})/);
+  return m ? m[1] : null;
+}
+
+function authHeaders(extra = {}) {
+  const token = getToken();
+  const h = { ...extra };
+  if (token) h['Authorization'] = 'Bearer ' + token;
+  return h;
+}
+
+async function authFetch(url, opts = {}) {
+  if (!opts.headers) opts.headers = {};
+  const token = getToken();
+  if (token) opts.headers['Authorization'] = 'Bearer ' + token;
+  const resp = await fetch(url, opts);
+  if (resp.status === 401) { window.location.href = '/login'; return null; }
+  return resp;
+}
+
+function cerrarSesion() {
+  authFetch('/api/logout', { method: 'POST' }).then(() => {
+    document.cookie = 'token=; Max-Age=0; path=/';
+    window.location.href = '/login';
+  });
+}
+
+// ============================================================
+// STATE
+// ============================================================
+let STATE = {
+  periodo: null,
+  registros: [],
+  metricasOriginal: null,
+  metricasFiltrado: null,
+  normalizacion: null,
+  archivos: [],
+  totalOriginal: 0,
+  totalFiltrado: 0,
+  verificacion: null,
+  config: {}
+};
+
+let charts = {};
+
+// ============================================================
+// TABS
+// ============================================================
+document.querySelectorAll('.tab').forEach(t => {
+  t.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    document.getElementById('tc-' + t.dataset.tab).classList.add('active');
+  });
+});
+
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach(t => {
+    t.classList.toggle('active', t.dataset.tab === name);
+  });
+  document.querySelectorAll('.tab-content').forEach(tc => {
+    tc.classList.toggle('active', tc.id === 'tc-' + name);
+  });
+}
+
+// ============================================================
+// UPLOAD
+// ============================================================
+const uploadZone = document.getElementById('uploadZone');
+const fileInput = document.getElementById('fileInput');
+
+uploadZone.addEventListener('click', () => fileInput.click());
+uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('dragover'); });
+uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('dragover'));
+uploadZone.addEventListener('drop', e => {
+  e.preventDefault(); uploadZone.classList.remove('dragover');
+  if (e.dataTransfer.files.length) procesarArchivo(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener('change', () => { if (fileInput.files.length) procesarArchivo(fileInput.files[0]); });
+
+async function procesarArchivo(file) {
+  const prog = document.getElementById('uploadProgress');
+  prog.classList.remove('hidden');
+  prog.querySelector('.fill').style.width = '30%';
+
+  const formData = new FormData();
+  formData.append('archivo', file);
+
+  try {
+    prog.querySelector('.fill').style.width = '60%';
+    const resp = await authFetch('/api/procesar', { method: 'POST', body: formData });
+    const data = await resp.json();
+    if (!resp.ok || data.error) throw new Error(data.error || 'Error del servidor');
+
+    prog.querySelector('.fill').style.width = '100%';
+
+    STATE.periodo = data.periodo;
+    STATE.registros = data.registros;
+    STATE.metricasOriginal = data.metricasOriginal;
+    STATE.metricasFiltrado = data.metricasFiltrado;
+    STATE.normalizacion = data.normalizacion;
+    STATE.archivos = data.archivos;
+    STATE.totalOriginal = data.totalOriginal;
+    STATE.totalFiltrado = data.totalFiltrado;
+
+    document.getElementById('btnGuardar').classList.remove('hidden');
+    renderTodo();
+
+    setTimeout(() => {
+      prog.classList.add('hidden');
+      switchTab('original');
+    }, 500);
+
+  } catch (e) {
+    alert('Error: ' + e.message);
+    prog.classList.add('hidden');
+  }
+}
+
+// ============================================================
+// RENDER ALL
+// ============================================================
+function renderTodo() {
+  renderMetricas('metricsOriginal', STATE.metricasOriginal, STATE.totalOriginal, null);
+  renderMetricas('metricsFiltrado', STATE.metricasFiltrado, STATE.totalFiltrado, STATE.normalizacion);
+  renderChartOriginal();
+  renderChartFiltrado();
+  renderUsuarios('tablaUsuariosOrig', STATE.metricasOriginal);
+  renderUsuarios('tablaUsuariosFilt', STATE.metricasFiltrado);
+  renderTelefonos();
+  renderRanking();
+  renderArchivos();
+}
+
+// ============================================================
+// METRICS
+// ============================================================
+function renderMetricas(containerId, metrics, total, norm) {
+  if (!metrics) return;
+  const c = document.getElementById(containerId);
+  let html = `
+    <div class="metric-card"><div class="value">${total}</div><div class="label">Total Registros</div></div>
+    <div class="metric-card"><div class="value">${metrics.telefonos.ok}</div><div class="label">Teléfonos OK</div></div>
+    <div class="metric-card"><div class="value" style="color:var(--warning)">${metrics.telefonos.mal}</div><div class="label">Teléfonos con Error</div></div>
+    <div class="metric-card"><div class="value" style="color:var(--danger)">${metrics.telefonos.sin}</div><div class="label">Sin Teléfono</div></div>
+  `;
+  if (norm) {
+    html += `
+      <div class="metric-card"><div class="value" style="color:var(--success)">${norm.OK||0}</div><div class="label">Normalizados OK</div></div>
+      <div class="metric-card"><div class="value" style="color:var(--warning)">${norm.LEVE||0}</div><div class="label">Error Leve</div></div>
+      <div class="metric-card"><div class="value" style="color:var(--danger)">${norm.RECHAZAR||0}</div><div class="label">Rechazados</div></div>
+    `;
+  }
+  c.innerHTML = html;
+}
+
+// ============================================================
+// CHARTS
+// ============================================================
+function destroyChart(key) { if (charts[key]) { charts[key].destroy(); delete charts[key]; } }
+
+function renderChartOriginal() {
+  if (!STATE.metricasOriginal) return;
+  const m = STATE.metricasOriginal;
+
+  destroyChart('tcodtalOrig');
+  charts.tcodtalOrig = new Chart(document.getElementById('chartTcodtalOrig'), {
+    type: 'doughnut',
+    data: { labels: Object.keys(m.por_tcodtal), datasets: [{ data: Object.values(m.por_tcodtal), backgroundColor: ['#4285f4','#34a853','#fbbc04','#ea4335','#ab47bc'] }] },
+    options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
+  });
+
+  destroyChart('telOrig');
+  const td = m.telefonos.detalle;
+  charts.telOrig = new Chart(document.getElementById('chartTelOrig'), {
+    type: 'bar',
+    data: { labels: Object.keys(td), datasets: [{ label: 'Cantidad', data: Object.values(td), backgroundColor: '#4285f4' }] },
+    options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+  });
+}
+
+function renderChartFiltrado() {
+  if (!STATE.metricasFiltrado) return;
+  const m = STATE.metricasFiltrado;
+
+  destroyChart('tcodtalFilt');
+  charts.tcodtalFilt = new Chart(document.getElementById('chartTcodtalFilt'), {
+    type: 'doughnut',
+    data: { labels: Object.keys(m.por_tcodtal), datasets: [{ data: Object.values(m.por_tcodtal), backgroundColor: ['#4285f4','#34a853','#fbbc04','#ea4335'] }] },
+    options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
+  });
+
+  destroyChart('normFilt');
+  const n = STATE.normalizacion || {};
+  charts.normFilt = new Chart(document.getElementById('chartNormFilt'), {
+    type: 'doughnut',
+    data: { labels: ['OK','Leve','Rechazar'], datasets: [{ data: [n.OK||0, n.LEVE||0, n.RECHAZAR||0], backgroundColor: ['#34a853','#fbbc04','#ea4335'] }] },
+    options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
+  });
+}
+
+// ============================================================
+// USER TABLES
+// ============================================================
+function renderUsuarios(containerId, metrics) {
+  if (!metrics) return;
+  const users = metrics.por_usuario;
+  let html = '<table><thead><tr><th>Usuario</th><th>Total</th><th>OK</th><th>Mal</th><th>Sin</th><th>% Error</th></tr></thead><tbody>';
+  Object.entries(users).forEach(([u, d]) => {
+    const pct = d.pct_err || 0;
+    const color = pct > 50 ? 'var(--danger)' : pct > 20 ? 'var(--warning)' : 'var(--success)';
+    html += `<tr><td><strong>${u}</strong></td><td>${d.total}</td><td>${d.ok}</td><td>${d.mal}</td><td>${d.sin}</td><td style="color:${color};font-weight:600;">${pct}%</td></tr>`;
+  });
+  html += '</tbody></table>';
+  document.getElementById(containerId).innerHTML = html;
+}
+
+// ============================================================
+// PHONE GRID
+// ============================================================
+function renderTelefonos() {
+  const filtro = document.getElementById('filtroEstado').value;
+  const usuario = document.getElementById('filtroUsuario').value;
+
+  // Populate user filter
+  const sel = document.getElementById('filtroUsuario');
+  if (sel.options.length <= 1) {
+    const users = new Set(STATE.registros.map(r => r.GNCOBS1));
+    [...users].sort().forEach(u => { if (u) { const o = document.createElement('option'); o.value = u; o.text = u; sel.add(o); } });
+  }
+
+  let rows = STATE.registros;
+  if (filtro !== 'TODOS') rows = rows.filter(r => r.UTELEFONO_ESTADO === filtro);
+  if (usuario) rows = rows.filter(r => r.GNCOBS1 === usuario);
+
+  document.getElementById('contadorTel').textContent = `${rows.length} registros`;
+
+  let html = '<table><thead><tr><th>#</th><th>Dominio</th><th>Nombre</th><th>Localidad</th><th>Original</th><th>Sugerencia</th><th>Número Final</th><th>Estado</th><th>Error</th></tr></thead><tbody>';
+  rows.forEach(r => {
+    const badge = r.UTELEFONO_ESTADO === 'OK' ? 'badge-ok' : r.UTELEFONO_ESTADO === 'LEVE' ? 'badge-leve' : 'badge-rechazar';
+    const final = r.UTELEFONO_FINAL || '';
+    html += `<tr>
+      <td>${r._idx}</td><td>${r.UDOMINIO}</td><td>${r.UAPEYNOM}</td><td>${r.ULOCALIDAD}</td>
+      <td style="font-family:monospace;">${r.UTELEFONO_ORIGINAL}</td>
+      <td style="font-family:monospace;">${r.UTELEFONO_SUGERENCIA}</td>
+      <td><input type="text" class="phone-input${final !== r.UTELEFONO_SUGERENCIA && final ? ' modified' : ''}" value="${final}" data-idx="${r._idx}" onchange="editarTelefono(this)"></td>
+      <td><span class="badge ${badge}">${r.UTELEFONO_ESTADO}</span></td>
+      <td style="font-size:.8em;color:var(--text-sec);">${r._errorDesc || ''}</td>
+    </tr>`;
+  });
+  html += '</tbody></table>';
+  document.getElementById('tablaTelefonos').innerHTML = html;
+}
+
+document.getElementById('filtroEstado').addEventListener('change', renderTelefonos);
+document.getElementById('filtroUsuario').addEventListener('change', renderTelefonos);
+
+function editarTelefono(input) {
+  const idx = parseInt(input.dataset.idx);
+  const val = input.value.replace(/\D/g, '');
+  input.value = val;
+
+  const reg = STATE.registros.find(r => r._idx === idx);
+  if (!reg) return;
+
+  reg.UTELEFONO_FINAL = val;
+  if (val.length === 10) {
+    reg.UTELEFONO_ESTADO = 'OK';
+    reg.UTELEFONO_WHATSAPP = '549' + val;
+    input.classList.add('modified');
+  }
+}
+
+// ============================================================
+// RANKING
+// ============================================================
+function renderRanking() {
+  if (!STATE.metricasFiltrado) return;
+  const users = STATE.metricasFiltrado.por_usuario;
+  const entries = Object.entries(users).sort((a, b) => b[1].pct_err - a[1].pct_err);
+
+  let html = '<table><thead><tr><th>#</th><th>Usuario</th><th>Total</th><th>OK</th><th>Mal</th><th>Sin</th><th>% Error</th><th>TCODTALs</th></tr></thead><tbody>';
+  entries.forEach(([u, d], i) => {
+    const pct = d.pct_err || 0;
+    const color = pct > 50 ? 'var(--danger)' : pct > 20 ? 'var(--warning)' : 'var(--success)';
+    const tcods = Object.entries(d.tcodtal || {}).map(([k,v]) => `${k}:${v}`).join(', ');
+    html += `<tr><td>${i+1}</td><td><strong>${u}</strong></td><td>${d.total}</td><td>${d.ok}</td><td>${d.mal}</td><td>${d.sin}</td><td style="color:${color};font-weight:700;">${pct}%</td><td style="font-size:.8em;">${tcods}</td></tr>`;
+  });
+  html += '</tbody></table>';
+  document.getElementById('tablaRanking').innerHTML = html;
+
+  destroyChart('ranking');
+  charts.ranking = new Chart(document.getElementById('chartRanking'), {
+    type: 'bar',
+    data: {
+      labels: entries.map(([u]) => u),
+      datasets: [
+        { label: 'OK', data: entries.map(([,d]) => d.ok), backgroundColor: '#34a853' },
+        { label: 'Mal', data: entries.map(([,d]) => d.mal), backgroundColor: '#fbbc04' },
+        { label: 'Sin', data: entries.map(([,d]) => d.sin), backgroundColor: '#ea4335' }
+      ]
+    },
+    options: { responsive: true, scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true } } }
+  });
+}
+
+// ============================================================
+// FILES
+// ============================================================
+function renderArchivos() {
+  const c = document.getElementById('listaArchivos');
+  if (!STATE.archivos.length) { c.innerHTML = '<p style="color:var(--text-sec)">No hay archivos generados.</p>'; return; }
+  let html = '';
+  STATE.archivos.forEach((a, i) => {
+    const est = Object.entries(a.estados || {}).map(([k,v]) => `<span class="badge badge-${k.toLowerCase() === 'ok' ? 'ok' : k.toLowerCase() === 'leve' ? 'leve' : 'rechazar'}">${k}: ${v}</span>`).join(' ');
+    html += `<div class="file-card">
+      <div><div class="file-info">${a.name}</div><div class="file-meta">${a.records} registros — Período: ${a.period} — V${a.version} ${est}</div></div>
+    </div>`;
+  });
+  c.innerHTML = html;
+}
+
+async function regenerarArchivos() {
+  try {
+    const resp = await authFetch('/api/generar-archivos', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ registros: STATE.registros })
+    });
+    const data = await resp.json();
+    if (data.ok) {
+      STATE.archivos = data.archivos;
+      renderArchivos();
+      alert('Archivos regenerados con las ediciones.');
+    }
+  } catch (e) { alert('Error: ' + e.message); }
+}
+
+async function descargarZip() {
+  if (!STATE.archivos.length) { alert('No hay archivos.'); return; }
+
+  // Need full content, regenerate
+  try {
+    const resp = await authFetch('/api/generar-archivos', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ registros: STATE.registros })
+    });
+    const data = await resp.json();
+    if (!data.ok) throw new Error('Error regenerando');
+
+    const zip = new JSZip();
+    data.archivos.forEach(a => zip.file(a.name, a.content));
+    const blob = await zip.generateAsync({ type: 'blob' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `obleas-${STATE.periodo || 'export'}.zip`;
+    a.click(); URL.revokeObjectURL(url);
+  } catch (e) { alert('Error: ' + e.message); }
+}
+
+// ============================================================
+// VERIFICATION
+// ============================================================
+let verifInterval = null;
+
+async function iniciarVerificacion() {
+  if (!STATE.registros.length) { alert('Primero procesá un archivo.'); return; }
+
+  const config = STATE.config;
+  if (!config.apiKey) { alert('Configurá la API Key en la pestaña Configuración.'); switchTab('config'); return; }
+
+  const registros = STATE.registros.filter(r => r.UDOMINIO);
+
+  try {
+    const resp = await authFetch('/api/verificar/iniciar', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ registros, config })
+    });
+    const data = await resp.json();
+    if (!data.ok) { alert(data.error); return; }
+
+    document.getElementById('btnIniciarVerif').disabled = true;
+    document.getElementById('btnPausarVerif').classList.remove('hidden');
+    document.getElementById('verifProgress').style.display = 'block';
+    document.getElementById('verifLog').style.display = 'block';
+    document.getElementById('verifLog').innerHTML = '';
+
+    let lastLog = 0;
+    verifInterval = setInterval(async () => {
+      const sr = await authFetch(`/api/verificar/estado?lastLog=${lastLog}`);
+      const st = await sr.json();
+
+      const pct = st.total ? Math.round(st.progress / st.total * 100) : 0;
+      document.getElementById('verifProgressFill').style.width = pct + '%';
+      document.getElementById('verifStatus').textContent = `${st.progress}/${st.total} (${pct}%)`;
+
+      const logBox = document.getElementById('verifLog');
+      st.log.forEach(l => {
+        const cls = l.tipo === 'ok' ? 'log-ok' : l.tipo === 'err' ? 'log-err' : 'log-warn';
+        logBox.innerHTML += `<div class="${cls}">${l.msg}</div>`;
+      });
+      logBox.scrollTop = logBox.scrollHeight;
+      lastLog = st.logOffset;
+
+      if (!st.running) {
+        clearInterval(verifInterval);
+        document.getElementById('btnIniciarVerif').disabled = false;
+        document.getElementById('btnPausarVerif').classList.add('hidden');
+
+        if (st.results) {
+          STATE.verificacion = st.results;
+          renderVerifResultados();
+        }
+      }
+    }, 1000);
+
+  } catch (e) { alert('Error: ' + e.message); }
+}
+
+async function pausarVerificacion() {
+  await authFetch('/api/verificar/pausar', { method: 'POST' });
+}
+
+function renderVerifResultados() {
+  if (!STATE.verificacion) return;
+  const panel = document.getElementById('verifResultados');
+  panel.classList.remove('hidden');
+
+  const resumen = {};
+  STATE.verificacion.forEach(r => {
+    const c = r.clasificacion.codigo;
+    resumen[c] = (resumen[c] || 0) + 1;
+  });
+
+  const labels = { NUESTRO_PEC_NUESTRO_TALLER: 'Nuestro PEC + Taller', NUESTRO_PEC_OTRO_TALLER: 'Nuestro PEC + Ext.', OTRO_PEC: 'Otro PEC', NO_RENOVO: 'No Renovó', PENDIENTE: 'Pendiente' };
+  const colors = { NUESTRO_PEC_NUESTRO_TALLER: '#34a853', NUESTRO_PEC_OTRO_TALLER: '#4285f4', OTRO_PEC: '#fbbc04', NO_RENOVO: '#ea4335', PENDIENTE: '#9e9e9e' };
+
+  let metricsHtml = '';
+  Object.entries(resumen).forEach(([k, v]) => {
+    metricsHtml += `<div class="metric-card"><div class="value" style="color:${colors[k] || '#333'}">${v}</div><div class="label">${labels[k] || k}</div></div>`;
+  });
+  document.getElementById('verifMetrics').innerHTML = metricsHtml;
+
+  destroyChart('verif');
+  charts.verif = new Chart(document.getElementById('chartVerif'), {
+    type: 'doughnut',
+    data: { labels: Object.keys(resumen).map(k => labels[k] || k), datasets: [{ data: Object.values(resumen), backgroundColor: Object.keys(resumen).map(k => colors[k] || '#999') }] },
+    options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
+  });
+
+  let html = '<table><thead><tr><th>Dominio</th><th>Nombre</th><th>Clasificación</th><th>PEC</th><th>Taller</th><th>Fecha Op.</th><th>Nuevo Vto.</th></tr></thead><tbody>';
+  STATE.verificacion.forEach(r => {
+    const c = r.clasificacion;
+    const badge = c.codigo === 'NO_RENOVO' ? 'badge-rechazar' : c.codigo.startsWith('NUESTRO') ? 'badge-ok' : 'badge-leve';
+    html += `<tr><td>${r.registro.UDOMINIO}</td><td>${r.registro.UAPEYNOM}</td><td><span class="badge ${badge}">${c.texto}</span></td><td>${c.pecNombre}</td><td>${c.tallerNombre}</td><td>${c.fechaOp}</td><td>${c.nuevoVto}</td></tr>`;
+  });
+  html += '</tbody></table>';
+  document.getElementById('tablaVerif').innerHTML = html;
+}
+
+function exportarVerifCSV() {
+  if (!STATE.verificacion) return;
+  const header = 'DOMINIO;NOMBRE;CLASIFICACION;PEC;TALLER;TALLER_COD;PEC_COD;FECHA_OP;NUEVO_VTO';
+  const lines = STATE.verificacion.map(r => {
+    const c = r.clasificacion;
+    return [r.registro.UDOMINIO, r.registro.UAPEYNOM, c.texto, c.pecNombre, c.tallerNombre, c.tallerCodigo, c.pecCodigo, c.fechaOp, c.nuevoVto].join(';');
+  });
+  const blob = new Blob([header + '\n' + lines.join('\n')], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `verificacion-${STATE.periodo || 'export'}.csv`;
+  a.click(); URL.revokeObjectURL(url);
+}
+
+// ============================================================
+// CONFIG
+// ============================================================
+async function cargarConfig() {
+  try {
+    const resp = await authFetch('/api/config');
+    STATE.config = await resp.json();
+    document.getElementById('cfgApiUrl').value = STATE.config.apiUrl || '';
+    document.getElementById('cfgApiKey').value = STATE.config.apiKey || '';
+    document.getElementById('cfgDelay').value = STATE.config.delay || 500;
+    document.getElementById('cfgPec').value = (STATE.config.pecPropios || []).join(', ');
+    document.getElementById('cfgTaller').value = (STATE.config.talleresPropios || []).join(', ');
+  } catch (e) { console.error('Error cargando config:', e); }
+}
+
+async function guardarConfig() {
+  STATE.config = {
+    apiUrl: document.getElementById('cfgApiUrl').value.trim(),
+    apiKey: document.getElementById('cfgApiKey').value.trim(),
+    delay: parseInt(document.getElementById('cfgDelay').value) || 500,
+    pecPropios: document.getElementById('cfgPec').value.split(',').map(s => s.trim()).filter(Boolean),
+    talleresPropios: document.getElementById('cfgTaller').value.split(',').map(s => s.trim()).filter(Boolean)
+  };
+  try {
+    await authFetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(STATE.config) });
+    document.getElementById('cfgMsg').textContent = 'Guardado!';
+    setTimeout(() => document.getElementById('cfgMsg').textContent = '', 2000);
+  } catch (e) { alert('Error: ' + e.message); }
+}
+
+// ============================================================
+// SAVE PERIOD
+// ============================================================
+async function guardarPeriodo() {
+  if (!STATE.periodo) { alert('Primero procesá un archivo.'); return; }
+
+  const payload = {
+    periodoId: STATE.periodo,
+    totalOriginal: STATE.totalOriginal,
+    totalFiltrado: STATE.totalFiltrado,
+    metricasOriginal: STATE.metricasOriginal,
+    metricasFiltrado: STATE.metricasFiltrado,
+    normalizacion: STATE.normalizacion,
+    registros: STATE.registros,
+    verificacion: STATE.verificacion ? {
+      resumen: {},
+      detalle: STATE.verificacion
+    } : null
+  };
+
+  if (STATE.verificacion) {
+    STATE.verificacion.forEach(r => {
+      const c = r.clasificacion.codigo;
+      payload.verificacion.resumen[c] = (payload.verificacion.resumen[c] || 0) + 1;
+    });
+  }
+
+  try {
+    const resp = await authFetch('/api/periodos', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await resp.json();
+    if (data.ok) {
+      alert(`Período ${STATE.periodo} guardado (v${data.periodo.version})`);
+    }
+  } catch (e) { alert('Error: ' + e.message); }
+}
+
+// ============================================================
+// LOAD SAVED PERIODS LIST
+// ============================================================
+async function cargarPeriodos() {
+  try {
+    const resp = await authFetch('/api/periodos');
+    if (!resp) return;
+    const periodos = await resp.json();
+    if (periodos.length) {
+      document.getElementById('periodosCargados').classList.remove('hidden');
+      let html = '';
+      periodos.forEach(p => {
+        html += `<div class="file-card" style="cursor:pointer;" onclick="cargarPeriodo('${p.periodoId}')">
+          <div><div class="file-info">${p.periodoId}</div><div class="file-meta">v${p.version} — Guardado: ${new Date(p.guardadoEn).toLocaleString('es-AR')} — ${p.resumen.totalFiltrado} filtrados</div></div>
+          <span style="color:var(--primary);font-size:.85em;">Cargar →</span>
+        </div>`;
+      });
+      document.getElementById('listaPeriodos').innerHTML = html;
+    }
+  } catch (e) { console.error(e); }
+}
+
+async function cargarPeriodo(id) {
+  try {
+    const resp = await authFetch(`/api/periodos/${id}`);
+    const data = await resp.json();
+
+    STATE.periodo = data.periodoId;
+    STATE.registros = data.registros || [];
+    STATE.metricasOriginal = data.metricasOriginal;
+    STATE.metricasFiltrado = data.metricasFiltrado;
+    STATE.normalizacion = data.normalizacion;
+    STATE.archivos = [];
+    STATE.totalOriginal = data.totalOriginal;
+    STATE.totalFiltrado = data.totalFiltrado;
+    STATE.verificacion = data.verificacion?.detalle || null;
+
+    document.getElementById('btnGuardar').classList.remove('hidden');
+    renderTodo();
+
+    if (STATE.verificacion) renderVerifResultados();
+    switchTab('original');
+  } catch (e) { alert('Error cargando período: ' + e.message); }
+}
+
+// ============================================================
+// INIT
+// ============================================================
+cargarConfig();
+cargarPeriodos();
+</script>
+</body>
+</html>
