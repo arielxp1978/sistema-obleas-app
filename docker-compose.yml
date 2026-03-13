@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  obleas:
+    build: .
+    container_name: sistema-obleas
+    restart: unless-stopped
+    ports:
+      - "3080:3000"
+    environment:
+      - APP_CLAVE=${APP_CLAVE:-nova2026}
+      - NODE_ENV=production
+    volumes:
+      - obleas-data:/app/data
+    labels:
+      - "com.centurylinklabs.watchtower.enable=false"
+
+volumes:
+  obleas-data:
+    driver: local

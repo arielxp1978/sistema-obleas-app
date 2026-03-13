@@ -1,0 +1,8 @@
+node_modules
+data
+uploads
+.git
+.gitignore
+.DS_Store
+*.md
+docker-compose.yml
