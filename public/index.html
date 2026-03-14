@@ -4,8 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Sistema de Obleas GNC - Nova GNC</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔧</text></svg>">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <style>
 :root {
   --primary: #1a73e8; --primary-dark: #1557b0; --success: #34a853;
@@ -45,7 +49,10 @@ header .links a:hover, header .links button:hover { background:rgba(255,255,255,
 .btn:disabled { opacity:.5; cursor:not-allowed; }
 table { width:100%; border-collapse:collapse; font-size:.85em; }
 th, td { padding:8px 10px; text-align:left; border-bottom:1px solid #eee; }
-th { background:#f8f9fa; font-weight:600; color:var(--text-sec); font-size:.8em; text-transform:uppercase; position:sticky; top:0; z-index:1; }
+th { background:#f8f9fa; font-weight:600; color:var(--text-sec); font-size:.8em; text-transform:uppercase; position:sticky; top:0; z-index:1; cursor:pointer; user-select:none; }
+th:hover { background:#e8eaed; }
+th .sort-arrow { font-size:.7em; margin-left:4px; opacity:.4; }
+th.sorted .sort-arrow { opacity:1; }
 tr:hover { background:#f8f9fa; }
 .table-wrap { max-height:500px; overflow:auto; border:1px solid var(--border); border-radius:var(--radius); }
 .badge { display:inline-block; padding:2px 10px; border-radius:12px; font-size:.75em; font-weight:600; }
@@ -68,7 +75,9 @@ input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 2px rg
 .mb-2 { margin-bottom:8px; } .mb-4 { margin-bottom:16px; }
 .text-center { text-align:center; }
 .charts-row { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
-@media(max-width:768px) { .charts-row { grid-template-columns:1fr; } }
+.charts-row-3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; }
+.chart-small { max-width:320px; max-height:320px; margin:0 auto; }
+@media(max-width:768px) { .charts-row, .charts-row-3 { grid-template-columns:1fr; } }
 .filter-bar { display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap; align-items:center; }
 .filter-bar select { width:auto; min-width:150px; }
 .phone-input { width:120px; padding:4px 8px; font-size:.85em; border:1px solid var(--border); border-radius:4px; }
@@ -104,6 +113,7 @@ input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 2px rg
   <div class="tab" data-tab="ranking">Ranking Usuarios</div>
   <div class="tab" data-tab="archivos">Descargar Archivos</div>
   <div class="tab" data-tab="verificacion">Verificación Post-Envío</div>
+  <div class="tab" data-tab="reporte">Reporte PDF</div>
   <div class="tab" data-tab="config">Configuración</div>
 </div>
 
@@ -134,8 +144,8 @@ input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 2px rg
 <div class="tab-content" id="tc-original">
   <div class="metrics-grid" id="metricsOriginal"></div>
   <div class="charts-row">
-    <div class="card"><h3>Distribución por TCODTAL</h3><canvas id="chartTcodtalOrig"></canvas></div>
-    <div class="card"><h3>Estado de Teléfonos</h3><canvas id="chartTelOrig"></canvas></div>
+    <div class="card"><h3>Distribución por Taller</h3><div class="chart-small"><canvas id="chartTcodtalOrig"></canvas></div></div>
+    <div class="card"><h3>Estado de Teléfonos</h3><div class="chart-small"><canvas id="chartTelOrig"></canvas></div></div>
   </div>
   <div class="card" style="margin-top:16px;">
     <h3>Detalle por Usuario (GNCOBS1)</h3>
@@ -145,10 +155,17 @@ input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 2px rg
 
 <!-- ==================== FILTRADO ==================== -->
 <div class="tab-content" id="tc-filtrado">
+  <div class="alert alert-info mb-4" id="filtroExplicacion">
+    <strong>Filtros aplicados:</strong> Se incluyen registros de talleres <strong>IRT0550</strong> (solo sin GNCOBS3), <strong>HIT0797</strong> y <strong>QUT0865</strong> (cualquier valor de GNCOBS3).
+  </div>
   <div class="metrics-grid" id="metricsFiltrado"></div>
   <div class="charts-row">
-    <div class="card"><h3>Distribución por TCODTAL</h3><canvas id="chartTcodtalFilt"></canvas></div>
-    <div class="card"><h3>Normalización de Teléfonos</h3><canvas id="chartNormFilt"></canvas></div>
+    <div class="card"><h3>Distribución por Taller</h3><div class="chart-small"><canvas id="chartTcodtalFilt"></canvas></div></div>
+    <div class="card"><h3>Normalización de Teléfonos</h3><div class="chart-small"><canvas id="chartNormFilt"></canvas></div></div>
+  </div>
+  <div class="charts-row" style="margin-top:16px;">
+    <div class="card"><h3>Ranking por Provincia</h3><div class="chart-small"><canvas id="chartProvincias"></canvas></div></div>
+    <div class="card"><h3>Ranking por Localidad (Top 15)</h3><div class="chart-small"><canvas id="chartLocalidades"></canvas></div></div>
   </div>
   <div class="card" style="margin-top:16px;">
     <h3>Detalle por Usuario (GNCOBS1)</h3>
@@ -174,7 +191,8 @@ input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 2px rg
     </div>
     <div class="alert alert-info mb-4">
       Editá el campo <strong>Número Final</strong> para corregir teléfonos con error leve.
-      Los números con 10 dígitos se marcarán automáticamente como OK.
+      Los números con 10 dígitos se marcarán automáticamente como OK y se les agrega el prefijo <strong>549</strong> para WhatsApp.
+      <br><em>Los cambios se guardan automáticamente en memoria. Usá "Guardar Período" para persistirlos.</em>
     </div>
     <div class="table-wrap" id="tablaTelefonos" style="max-height:600px;"></div>
   </div>
@@ -229,6 +247,27 @@ input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 2px rg
       <button class="btn btn-success" onclick="exportarVerifCSV()">Exportar CSV</button>
     </div>
     <div class="table-wrap" id="tablaVerif" style="max-height:500px;"></div>
+  </div>
+</div>
+
+<!-- ==================== REPORTE PDF ==================== -->
+<div class="tab-content" id="tc-reporte">
+  <div class="card">
+    <h3>Reporte PDF — Obleas Vencidas</h3>
+    <div class="alert alert-info mb-4">
+      Generá un reporte PDF acumulativo con métricas de retención, renovaciones y estado de teléfonos.
+      El reporte incluye datos del período cargado actualmente.
+    </div>
+    <div class="flex gap-4 items-center mb-4">
+      <button class="btn btn-primary" onclick="generarReportePDF()">📄 Descargar Reporte PDF</button>
+      <span id="reporteMsg" style="font-size:.85em;color:var(--text-sec);"></span>
+    </div>
+    <div class="card" id="reportePreview" style="background:#fafbfc;">
+      <h3>Vista previa del reporte</h3>
+      <div id="reporteContenido" style="font-size:.9em;">
+        <p style="color:var(--text-sec);">Cargá un archivo CSV para generar el reporte.</p>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -396,11 +435,13 @@ function renderTodo() {
   renderMetricas('metricsFiltrado', STATE.metricasFiltrado, STATE.totalFiltrado, STATE.normalizacion);
   renderChartOriginal();
   renderChartFiltrado();
+  renderChartProvinciasLocalidades();
   renderUsuarios('tablaUsuariosOrig', STATE.metricasOriginal);
   renderUsuarios('tablaUsuariosFilt', STATE.metricasFiltrado);
   renderTelefonos();
   renderRanking();
   renderArchivos();
+  renderReportePreview();
 }
 
 // ============================================================
@@ -409,11 +450,13 @@ function renderTodo() {
 function renderMetricas(containerId, metrics, total, norm) {
   if (!metrics) return;
   const c = document.getElementById(containerId);
+  const pctEfectividad = total > 0 ? Math.round((metrics.telefonos.ok / total) * 1000) / 10 : 0;
   let html = `
     <div class="metric-card"><div class="value">${total}</div><div class="label">Total Registros</div></div>
     <div class="metric-card"><div class="value">${metrics.telefonos.ok}</div><div class="label">Teléfonos OK</div></div>
     <div class="metric-card"><div class="value" style="color:var(--warning)">${metrics.telefonos.mal}</div><div class="label">Teléfonos con Error</div></div>
     <div class="metric-card"><div class="value" style="color:var(--danger)">${metrics.telefonos.sin}</div><div class="label">Sin Teléfono</div></div>
+    <div class="metric-card"><div class="value" style="color:${pctEfectividad > 70 ? 'var(--success)' : pctEfectividad > 40 ? 'var(--warning)' : 'var(--danger)'}">${pctEfectividad}%</div><div class="label">% Efectividad Tel.</div></div>
   `;
   if (norm) {
     html += `
@@ -430,6 +473,14 @@ function renderMetricas(containerId, metrics, total, norm) {
 // ============================================================
 function destroyChart(key) { if (charts[key]) { charts[key].destroy(); delete charts[key]; } }
 
+const DATALABELS_OPTS = {
+  formatter: (value, ctx) => {
+    const label = ctx.chart.data.labels[ctx.dataIndex];
+    return value > 0 ? `${label}\n${value}` : '';
+  },
+  color: '#fff', font: { size: 11, weight: 'bold' }, textAlign: 'center'
+};
+
 function renderChartOriginal() {
   if (!STATE.metricasOriginal) return;
   const m = STATE.metricasOriginal;
@@ -438,7 +489,8 @@ function renderChartOriginal() {
   charts.tcodtalOrig = new Chart(document.getElementById('chartTcodtalOrig'), {
     type: 'doughnut',
     data: { labels: Object.keys(m.por_tcodtal), datasets: [{ data: Object.values(m.por_tcodtal), backgroundColor: ['#4285f4','#34a853','#fbbc04','#ea4335','#ab47bc'] }] },
-    options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
+    options: { responsive: true, plugins: { legend: { display: false }, datalabels: DATALABELS_OPTS } },
+    plugins: [ChartDataLabels]
   });
 
   destroyChart('telOrig');
@@ -446,7 +498,7 @@ function renderChartOriginal() {
   charts.telOrig = new Chart(document.getElementById('chartTelOrig'), {
     type: 'bar',
     data: { labels: Object.keys(td), datasets: [{ label: 'Cantidad', data: Object.values(td), backgroundColor: '#4285f4' }] },
-    options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+    options: { responsive: true, plugins: { legend: { display: false }, datalabels: { display: false } }, scales: { y: { beginAtZero: true } } }
   });
 }
 
@@ -458,7 +510,8 @@ function renderChartFiltrado() {
   charts.tcodtalFilt = new Chart(document.getElementById('chartTcodtalFilt'), {
     type: 'doughnut',
     data: { labels: Object.keys(m.por_tcodtal), datasets: [{ data: Object.values(m.por_tcodtal), backgroundColor: ['#4285f4','#34a853','#fbbc04','#ea4335'] }] },
-    options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
+    options: { responsive: true, plugins: { legend: { display: false }, datalabels: DATALABELS_OPTS } },
+    plugins: [ChartDataLabels]
   });
 
   destroyChart('normFilt');
@@ -466,7 +519,39 @@ function renderChartFiltrado() {
   charts.normFilt = new Chart(document.getElementById('chartNormFilt'), {
     type: 'doughnut',
     data: { labels: ['OK','Leve','Rechazar'], datasets: [{ data: [n.OK||0, n.LEVE||0, n.RECHAZAR||0], backgroundColor: ['#34a853','#fbbc04','#ea4335'] }] },
-    options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
+    options: { responsive: true, plugins: { legend: { display: false }, datalabels: DATALABELS_OPTS } },
+    plugins: [ChartDataLabels]
+  });
+}
+
+function renderChartProvinciasLocalidades() {
+  if (!STATE.registros.length) return;
+  const provCount = {}, locCount = {};
+  STATE.registros.forEach(r => {
+    const prov = (r.UPROVINCIA || 'Sin datos').trim();
+    const loc = (r.ULOCALIDAD || 'Sin datos').trim();
+    provCount[prov] = (provCount[prov] || 0) + 1;
+    locCount[loc] = (locCount[loc] || 0) + 1;
+  });
+
+  const provSorted = Object.entries(provCount).sort((a,b) => b[1]-a[1]);
+  const locSorted = Object.entries(locCount).sort((a,b) => b[1]-a[1]).slice(0, 15);
+  const colors = ['#4285f4','#34a853','#fbbc04','#ea4335','#ab47bc','#00bcd4','#ff7043','#8d6e63','#78909c','#66bb6a','#ef5350','#42a5f5','#ffca28','#26c6da','#ec407a'];
+
+  destroyChart('provincias');
+  charts.provincias = new Chart(document.getElementById('chartProvincias'), {
+    type: 'doughnut',
+    data: { labels: provSorted.map(e=>e[0]), datasets: [{ data: provSorted.map(e=>e[1]), backgroundColor: colors }] },
+    options: { responsive: true, plugins: { legend: { display: false }, datalabels: DATALABELS_OPTS } },
+    plugins: [ChartDataLabels]
+  });
+
+  destroyChart('localidades');
+  charts.localidades = new Chart(document.getElementById('chartLocalidades'), {
+    type: 'doughnut',
+    data: { labels: locSorted.map(e=>e[0]), datasets: [{ data: locSorted.map(e=>e[1]), backgroundColor: colors }] },
+    options: { responsive: true, plugins: { legend: { position: 'right', labels: { font: { size: 10 } } }, datalabels: { formatter: v => v, color: '#fff', font: { size: 10, weight: 'bold' } } } },
+    plugins: [ChartDataLabels]
   });
 }
 
@@ -854,6 +939,164 @@ async function cargarPeriodo(id) {
     if (STATE.verificacion) renderVerifResultados();
     switchTab('original');
   } catch (e) { alert('Error cargando período: ' + e.message); }
+}
+
+// ============================================================
+// SORTABLE TABLES
+// ============================================================
+function makeSortable(tableWrapId) {
+  const wrap = document.getElementById(tableWrapId);
+  if (!wrap) return;
+  const table = wrap.querySelector('table');
+  if (!table) return;
+  const headers = table.querySelectorAll('th');
+  headers.forEach((th, colIdx) => {
+    th.innerHTML += ' <span class="sort-arrow">▲</span>';
+    th.addEventListener('click', () => {
+      const tbody = table.querySelector('tbody');
+      const rows = Array.from(tbody.querySelectorAll('tr'));
+      const isAsc = th.dataset.sort !== 'asc';
+      headers.forEach(h => { h.classList.remove('sorted'); h.dataset.sort = ''; });
+      th.classList.add('sorted');
+      th.dataset.sort = isAsc ? 'asc' : 'desc';
+      th.querySelector('.sort-arrow').textContent = isAsc ? '▲' : '▼';
+      rows.sort((a, b) => {
+        const aVal = a.cells[colIdx]?.textContent.trim() || '';
+        const bVal = b.cells[colIdx]?.textContent.trim() || '';
+        const aNum = parseFloat(aVal.replace('%',''));
+        const bNum = parseFloat(bVal.replace('%',''));
+        if (!isNaN(aNum) && !isNaN(bNum)) return isAsc ? aNum - bNum : bNum - aNum;
+        return isAsc ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+      });
+      rows.forEach(r => tbody.appendChild(r));
+    });
+  });
+}
+
+// Hook sort after rendering
+const _origRenderUsuarios = renderUsuarios;
+renderUsuarios = function(containerId, metrics) {
+  _origRenderUsuarios(containerId, metrics);
+  makeSortable(containerId);
+};
+const _origRenderRanking = renderRanking;
+renderRanking = function() {
+  _origRenderRanking();
+  makeSortable('tablaRanking');
+};
+
+// ============================================================
+// REPORTE PDF
+// ============================================================
+function renderReportePreview() {
+  if (!STATE.periodo || !STATE.registros.length) return;
+  const norm = STATE.normalizacion || {};
+  const total = STATE.totalFiltrado;
+  const okTel = norm.OK || 0;
+  const pctEfect = total > 0 ? Math.round(okTel / total * 1000) / 10 : 0;
+
+  const provCount = {};
+  STATE.registros.forEach(r => {
+    const p = (r.UPROVINCIA || 'Sin datos').trim();
+    provCount[p] = (provCount[p] || 0) + 1;
+  });
+  const topProv = Object.entries(provCount).sort((a,b) => b[1]-a[1]).slice(0,5);
+
+  let html = `
+    <div class="metrics-grid">
+      <div class="metric-card"><div class="value">${STATE.totalOriginal}</div><div class="label">Total Original</div></div>
+      <div class="metric-card"><div class="value">${STATE.totalFiltrado}</div><div class="label">Total Filtrado</div></div>
+      <div class="metric-card"><div class="value" style="color:var(--success)">${okTel}</div><div class="label">Teléfonos OK</div></div>
+      <div class="metric-card"><div class="value" style="color:${pctEfect > 70 ? 'var(--success)' : 'var(--warning)'}">${pctEfect}%</div><div class="label">Efectividad</div></div>
+    </div>
+    <p style="margin-top:12px;"><strong>Período:</strong> ${STATE.periodo} | <strong>Top provincias:</strong> ${topProv.map(e => e[0]+': '+e[1]).join(', ')}</p>
+  `;
+  document.getElementById('reporteContenido').innerHTML = html;
+}
+
+function generarReportePDF() {
+  if (!STATE.periodo || !STATE.registros.length) { alert('Primero cargá un archivo CSV.'); return; }
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+  const periodo = STATE.periodo || 'sin-fecha';
+  const [mes, anio] = periodo.split('-');
+  const meses = ['','Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  const mesNombre = meses[parseInt(mes)] || mes;
+  const titulo = `Obleas Vencidas ${mesNombre} ${anio}`;
+
+  // Header
+  doc.setFontSize(18);
+  doc.setTextColor(26, 115, 232);
+  doc.text('Nova GNC', 14, 20);
+  doc.setFontSize(14);
+  doc.setTextColor(32, 33, 36);
+  doc.text(titulo, 14, 30);
+  doc.setFontSize(9);
+  doc.setTextColor(95, 99, 104);
+  doc.text(`Generado: ${new Date().toLocaleString('es-AR')}`, 14, 36);
+
+  // Métricas generales
+  doc.setFontSize(12);
+  doc.setTextColor(32, 33, 36);
+  doc.text('Resumen General', 14, 48);
+
+  const norm = STATE.normalizacion || {};
+  const okTel = norm.OK || 0;
+  const pctEfect = STATE.totalFiltrado > 0 ? Math.round(okTel / STATE.totalFiltrado * 1000) / 10 : 0;
+
+  doc.autoTable({
+    startY: 52,
+    head: [['Métrica', 'Valor']],
+    body: [
+      ['Total registros originales', STATE.totalOriginal.toString()],
+      ['Total registros filtrados', STATE.totalFiltrado.toString()],
+      ['Teléfonos OK', (norm.OK || 0).toString()],
+      ['Teléfonos con error leve', (norm.LEVE || 0).toString()],
+      ['Teléfonos rechazados', (norm.RECHAZAR || 0).toString()],
+      ['% Efectividad teléfonos', pctEfect + '%'],
+    ],
+    theme: 'striped', headStyles: { fillColor: [26, 115, 232] }
+  });
+
+  // Distribución por taller
+  let y = doc.lastAutoTable.finalY + 12;
+  doc.text('Distribución por Taller', 14, y);
+  const tcodtal = STATE.metricasFiltrado?.por_tcodtal || {};
+  doc.autoTable({
+    startY: y + 4,
+    head: [['Taller', 'Cantidad', '% del Total']],
+    body: Object.entries(tcodtal).map(([k, v]) => [k, v.toString(), (STATE.totalFiltrado > 0 ? Math.round(v/STATE.totalFiltrado*1000)/10 : 0) + '%']),
+    theme: 'striped', headStyles: { fillColor: [52, 168, 83] }
+  });
+
+  // Top provincias
+  y = doc.lastAutoTable.finalY + 12;
+  doc.text('Distribución por Provincia', 14, y);
+  const provCount = {};
+  STATE.registros.forEach(r => { const p = (r.UPROVINCIA||'').trim(); provCount[p] = (provCount[p]||0)+1; });
+  doc.autoTable({
+    startY: y + 4,
+    head: [['Provincia', 'Cantidad', '% del Total']],
+    body: Object.entries(provCount).sort((a,b)=>b[1]-a[1]).map(([k,v]) => [k, v.toString(), Math.round(v/STATE.totalFiltrado*1000)/10+'%']),
+    theme: 'striped', headStyles: { fillColor: [171, 71, 188] }
+  });
+
+  // Ranking usuarios
+  if (doc.lastAutoTable.finalY > 240) doc.addPage();
+  y = doc.lastAutoTable.finalY > 240 ? 20 : doc.lastAutoTable.finalY + 12;
+  doc.text('Ranking de Usuarios', 14, y);
+  const users = STATE.metricasFiltrado?.por_usuario || {};
+  doc.autoTable({
+    startY: y + 4,
+    head: [['Usuario', 'Total', 'OK', 'Mal', 'Sin', '% Error']],
+    body: Object.entries(users).sort((a,b)=>b[1].pct_err-a[1].pct_err).map(([u,d]) => [u, d.total, d.ok, d.mal, d.sin, d.pct_err+'%']),
+    theme: 'striped', headStyles: { fillColor: [249, 171, 0] }
+  });
+
+  doc.save(`${titulo.replace(/\s+/g, '_')}.pdf`);
+  document.getElementById('reporteMsg').textContent = '✅ PDF descargado';
+  setTimeout(() => document.getElementById('reporteMsg').textContent = '', 3000);
 }
 
 // ============================================================
