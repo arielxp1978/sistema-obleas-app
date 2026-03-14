@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Sistema de Obleas GNC - Nova GNC</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔧</text></svg>">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📄</text></svg>">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
@@ -106,7 +106,7 @@ input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 2px rg
 </header>
 
 <div class="tabs" id="tabs">
-  <div class="tab active" data-tab="upload">Subir Archivo</div>
+  <div class="tab active" data-tab="upload">📁 Archivos</div>
   <div class="tab" data-tab="original">Original</div>
   <div class="tab" data-tab="filtrado">Filtrado</div>
   <div class="tab" data-tab="telefonos">Revisar Teléfonos</div>
@@ -118,9 +118,13 @@ input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 2px rg
 </div>
 
 <!-- ==================== SUBIR ARCHIVO ==================== -->
-<div class="tab-content active" id="tc-upload">
+  <div id="periodosCargados" class="card">
+    <h3>📂 Obleas Guardadas</h3>
+    <p style="font-size:.85em;color:var(--text-sec);margin-bottom:12px;">Seleccioná un período para revisar o continá trabajando con datos guardados.</p>
+    <div id="listaPeriodos"><p style="color:var(--text-sec);font-size:.9em;">No hay períodos guardados aún.</p></div>
+  </div>
   <div class="card">
-    <h3>Subir CSV de ENARGAS</h3>
+    <h3>⬆️ Subir Nuevo CSV de ENARGAS</h3>
     <div class="upload-zone" id="uploadZone">
       <input type="file" id="fileInput" accept=".csv,.txt">
       <p style="font-size:1.1em;margin-bottom:8px;">Arrastrá o hacé clic para subir el archivo CSV</p>
@@ -134,9 +138,8 @@ input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 2px rg
       <div class="progress-bar"><div class="fill" style="width:0%"></div></div>
     </div>
   </div>
-  <div id="periodosCargados" class="card hidden">
-    <h3>Períodos Guardados</h3>
-    <div id="listaPeriodos"></div>
+  <div id="archivoActual" class="alert alert-success hidden">
+    <strong>📊 Archivo cargado:</strong> <span id="archivoActualNombre"></span>
   </div>
 </div>
 
@@ -351,6 +354,13 @@ let STATE = {
 };
 
 let charts = {};
+const MESES = ['','Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+
+function periodoNombreLegible(periodoId) {
+  if (!periodoId || periodoId === 'sin-fecha') return 'Obleas sin fecha';
+  const [mes, anio] = periodoId.split('-');
+  return `Obleas ${MESES[parseInt(mes)] || mes} ${anio}`;
+}
 
 // ============================================================
 // TABS
@@ -414,6 +424,8 @@ async function procesarArchivo(file) {
     STATE.totalFiltrado = data.totalFiltrado;
 
     document.getElementById('btnGuardar').classList.remove('hidden');
+    document.getElementById('archivoActual').classList.remove('hidden');
+    document.getElementById('archivoActualNombre').textContent = periodoNombreLegible(STATE.periodo) + ` (${STATE.totalFiltrado} registros filtrados)`;
     renderTodo();
 
     setTimeout(() => {
@@ -891,7 +903,8 @@ async function guardarPeriodo() {
     });
     const data = await resp.json();
     if (data.ok) {
-      alert(`Período ${STATE.periodo} guardado (v${data.periodo.version})`);
+      alert(`${periodoNombreLegible(STATE.periodo)} guardado (v${data.periodo.version})`);
+      cargarPeriodos();
     }
   } catch (e) { alert('Error: ' + e.message); }
 }
@@ -905,15 +918,17 @@ async function cargarPeriodos() {
     if (!resp) return;
     const periodos = await resp.json();
     if (periodos.length) {
-      document.getElementById('periodosCargados').classList.remove('hidden');
       let html = '';
       periodos.forEach(p => {
+        const nombre = periodoNombreLegible(p.periodoId);
         html += `<div class="file-card" style="cursor:pointer;" onclick="cargarPeriodo('${p.periodoId}')">
-          <div><div class="file-info">${p.periodoId}</div><div class="file-meta">v${p.version} — Guardado: ${new Date(p.guardadoEn).toLocaleString('es-AR')} — ${p.resumen.totalFiltrado} filtrados</div></div>
+          <div><div class="file-info">📄 ${nombre}</div><div class="file-meta">v${p.version} — Guardado: ${new Date(p.guardadoEn).toLocaleString('es-AR')} — ${p.resumen.totalFiltrado} filtrados</div></div>
           <span style="color:var(--primary);font-size:.85em;">Cargar →</span>
         </div>`;
       });
       document.getElementById('listaPeriodos').innerHTML = html;
+    } else {
+      document.getElementById('listaPeriodos').innerHTML = '<p style="color:var(--text-sec);font-size:.9em;">No hay períodos guardados aún. Subí un CSV para comenzar.</p>';
     }
   } catch (e) { console.error(e); }
 }
@@ -934,6 +949,8 @@ async function cargarPeriodo(id) {
     STATE.verificacion = data.verificacion?.detalle || null;
 
     document.getElementById('btnGuardar').classList.remove('hidden');
+    document.getElementById('archivoActual').classList.remove('hidden');
+    document.getElementById('archivoActualNombre').textContent = periodoNombreLegible(STATE.periodo) + ` (${STATE.totalFiltrado} registros filtrados)`;
     renderTodo();
 
     if (STATE.verificacion) renderVerifResultados();
