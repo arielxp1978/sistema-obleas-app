@@ -6,3 +6,4 @@ uploads/
 .env
 *.csv
 package-lock.json
+_backup_local_2026-04-08/

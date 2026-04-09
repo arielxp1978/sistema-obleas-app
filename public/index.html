@@ -103,6 +103,28 @@ input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 2px rg
 /* Filtro info btn */
 .filtro-info-btn { background:var(--primary); color:#fff; border:none; border-radius:50%; width:22px; height:22px; font-size:.8em; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; font-weight:700; margin-left:8px; }
 .filtro-detail { background:#f8f9fa; border:1px solid var(--border); border-radius:var(--radius); padding:12px 16px; font-size:.85em; line-height:1.6; margin-top:8px; }
+/* Chart cards premium */
+.chart-card-dark { background:linear-gradient(145deg,#1a1d2e,#0d1117); border:1px solid rgba(255,255,255,.08); border-radius:12px; padding:20px; margin-bottom:0; box-shadow:0 8px 32px rgba(0,0,0,.3); position:relative; overflow:hidden; }
+.chart-card-dark::before { content:''; position:absolute; top:-50%; left:-50%; width:200%; height:200%; background:radial-gradient(ellipse at center, rgba(66,133,244,.05) 0%, transparent 60%); pointer-events:none; }
+.chart-card-dark h3 { color:#e8eaed; font-size:.95em; font-weight:600; margin-bottom:16px; padding-bottom:8px; border-bottom:1px solid rgba(255,255,255,.1); display:flex; align-items:center; gap:8px; }
+.chart-card-dark h3 .chart-icon { font-size:1em; }
+/* Metric cards vibrantes */
+.metric-card-vibrant { border-radius:12px; padding:18px; text-align:center; position:relative; overflow:hidden; }
+.metric-card-vibrant .value { font-size:2em; font-weight:800; }
+.metric-card-vibrant .label { font-size:.75em; margin-top:4px; font-weight:500; opacity:.85; }
+.mv-blue { background:linear-gradient(135deg,#1a73e8,#4285f4); color:#fff; box-shadow:0 4px 20px rgba(26,115,232,.35); }
+.mv-green { background:linear-gradient(135deg,#0f9d58,#34a853); color:#fff; box-shadow:0 4px 20px rgba(52,168,83,.35); }
+.mv-amber { background:linear-gradient(135deg,#e37400,#f9ab00); color:#fff; box-shadow:0 4px 20px rgba(249,171,0,.35); }
+.mv-red { background:linear-gradient(135deg,#c5221f,#ea4335); color:#fff; box-shadow:0 4px 20px rgba(234,67,53,.35); }
+.mv-purple { background:linear-gradient(135deg,#7b1fa2,#ab47bc); color:#fff; box-shadow:0 4px 20px rgba(171,71,188,.35); }
+.mv-teal { background:linear-gradient(135deg,#00796b,#26a69a); color:#fff; box-shadow:0 4px 20px rgba(38,166,154,.35); }
+/* Rankings chart bar horizontal */
+.hbar-wrap { display:flex; flex-direction:column; gap:8px; }
+.hbar-item { display:flex; align-items:center; gap:8px; }
+.hbar-label { font-size:.8em; color:#e8eaed; min-width:100px; text-align:right; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.hbar-track { flex:1; background:rgba(255,255,255,.08); border-radius:4px; height:22px; overflow:hidden; }
+.hbar-fill { height:100%; border-radius:4px; display:flex; align-items:center; justify-content:flex-end; padding-right:8px; font-size:.75em; font-weight:700; color:#fff; transition:width .8s cubic-bezier(.4,0,.2,1); }
+.hbar-count { font-size:.8em; color:#9aa0a6; min-width:30px; }
 </style>
 </head>
 <body>
@@ -114,20 +136,24 @@ input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 2px rg
       <span id="headerTalleres">Talleres: cargando...</span>
       <span id="headerPecCods">PEC: cargando...</span>
     </div>
+    <div id="archivoActivoBadge" class="hidden" style="display:none;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.35);border-radius:20px;padding:3px 12px;font-size:.8em;font-weight:600;margin-top:4px;width:fit-content;">
+      📋 <span id="archivoActivoNombre"></span>
+      <span id="archivoActivoBtnGuardar" style="margin-left:8px;opacity:.7;cursor:pointer;" onclick="guardarPeriodo()" title="Guardar cambios">💾</span>
+    </div>
   </div>
   <div class="links">
     <div class="tooltip-wrap">
       <button class="tooltip-btn">?</button>
       <div class="tooltip-box" id="tooltipCodigos">Cargando configuración...</div>
     </div>
-    <button onclick="guardarPeriodo()" id="btnGuardar" class="hidden">Guardar Período</button>
+    <button onclick="switchTab('upload')" style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);">📁 Archivos</button>
+    <button onclick="guardarPeriodo()" id="btnGuardar" class="hidden">💾 Guardar</button>
     <a href="/historial.html">Historial General</a>
     <button onclick="cerrarSesion()" style="background:rgba(234,67,53,.3);border-color:rgba(234,67,53,.5);">Salir</button>
   </div>
 </header>
 
 <div class="tabs" id="tabs">
-  <div class="tab active" data-tab="upload">📁 Archivos</div>
   <div class="tab" data-tab="original">Original</div>
   <div class="tab" data-tab="filtrado">Filtrado</div>
   <div class="tab" data-tab="telefonos">Revisar Teléfonos</div>
@@ -138,14 +164,10 @@ input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 2px rg
   <div class="tab" data-tab="config">Configuración</div>
 </div>
 
+<div class="tab-content active" id="tc-upload">
 <!-- ==================== SUBIR ARCHIVO ==================== -->
-  <div id="periodosCargados" class="card">
-    <h3>📂 Obleas Guardadas</h3>
-    <p style="font-size:.85em;color:var(--text-sec);margin-bottom:12px;">Seleccioná un período para revisar o continá trabajando con datos guardados.</p>
-    <div id="listaPeriodos"><p style="color:var(--text-sec);font-size:.9em;">No hay períodos guardados aún.</p></div>
-  </div>
   <div class="card">
-    <h3>⬆️ Subir Nuevo CSV de ENARGAS</h3>
+    <h3>⬆️ Subir CSV de ENARGAS</h3>
     <div class="upload-zone" id="uploadZone">
       <input type="file" id="fileInput" accept=".csv,.txt">
       <p style="font-size:1.1em;margin-bottom:8px;">Arrastrá o hacé clic para subir el archivo CSV</p>
@@ -159,7 +181,11 @@ input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 2px rg
       <div class="progress-bar"><div class="fill" style="width:0%"></div></div>
     </div>
   </div>
-  <div id="archivoActual" class="alert alert-success hidden">
+  <div class="card" style="margin-top:16px;">
+    <h3>📂 Obleas Guardadas <span style="font-size:.8em;font-weight:400;color:var(--text-sec);">(más recientes primero)</span></h3>
+    <div id="listaPeriodos"><p style="color:var(--text-sec);font-size:.9em;">No hay períodos guardados aún.</p></div>
+  </div>
+  <div id="archivoActual" class="alert alert-success hidden" style="margin-top:12px;">
     <strong>📊 Archivo cargado:</strong> <span id="archivoActualNombre"></span>
   </div>
 </div>
@@ -167,9 +193,13 @@ input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 2px rg
 <!-- ==================== ORIGINAL ==================== -->
 <div class="tab-content" id="tc-original">
   <div class="metrics-grid" id="metricsOriginal"></div>
-  <div class="charts-row">
-    <div class="card"><h3>Distribución por Taller</h3><div class="chart-small"><canvas id="chartTcodtalOrig"></canvas></div></div>
-    <div class="card"><h3>Estado de Teléfonos</h3><div class="chart-small"><canvas id="chartTelOrig"></canvas></div></div>
+  <div class="charts-row" style="margin-top:16px;">
+    <div class="chart-card-dark"><h3><span class="chart-icon">🏗️</span>Distribución por Taller</h3><div class="chart-small"><canvas id="chartTcodtalOrig"></canvas></div></div>
+    <div class="chart-card-dark"><h3><span class="chart-icon">📱</span>Estado de Teléfonos</h3><canvas id="chartTelOrig"></canvas></div>
+  </div>
+  <div class="charts-row" style="margin-top:16px;">
+    <div class="chart-card-dark"><h3><span class="chart-icon">🏢</span>Distribución por Comisionista (PEC)</h3><div class="chart-small"><canvas id="chartPecOrig"></canvas></div></div>
+    <div class="chart-card-dark"><h3><span class="chart-icon">👥</span>% Error por Usuario</h3><div id="hbarUsersError" class="hbar-wrap" style="max-height:200px;overflow-y:auto;"></div></div>
   </div>
   <div class="card" style="margin-top:16px;">
     <h3>Detalle por Usuario (GNCOBS1)</h3>
@@ -186,12 +216,12 @@ input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 2px rg
   <div class="filtro-detail hidden" id="filtroDetalle"></div>
   <div class="metrics-grid" id="metricsFiltrado"></div>
   <div class="charts-row">
-    <div class="card"><h3>Distribución por Taller</h3><div class="chart-small"><canvas id="chartTcodtalFilt"></canvas></div></div>
-    <div class="card"><h3>Normalización de Teléfonos</h3><div class="chart-small"><canvas id="chartNormFilt"></canvas></div></div>
+    <div class="chart-card-dark"><h3><span class="chart-icon">🏗️</span>Distribución por Taller</h3><div class="chart-small"><canvas id="chartTcodtalFilt"></canvas></div></div>
+    <div class="chart-card-dark"><h3><span class="chart-icon">✅</span>Normalización de Teléfonos</h3><div class="chart-small"><canvas id="chartNormFilt"></canvas></div></div>
   </div>
   <div class="charts-row" style="margin-top:16px;">
-    <div class="card"><h3>Ranking por Provincia</h3><div class="chart-small"><canvas id="chartProvincias"></canvas></div></div>
-    <div class="card"><h3>Ranking por Localidad (Top 15)</h3><div class="chart-small"><canvas id="chartLocalidades"></canvas></div></div>
+    <div class="chart-card-dark"><h3><span class="chart-icon">📍</span>Ranking por Provincia</h3><div id="hbarProvincias" class="hbar-wrap"></div></div>
+    <div class="chart-card-dark"><h3><span class="chart-icon">🏙️</span>Top 15 Localidades</h3><div id="hbarLocalidades" class="hbar-wrap"></div></div>
   </div>
   <div class="card" style="margin-top:16px;">
     <h3>Detalle por Usuario (GNCOBS1)</h3>
@@ -254,8 +284,21 @@ input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 2px rg
   <div class="card">
     <h3>Verificación contra API ENARGAS</h3>
     <div class="flex gap-4 items-center mb-4">
-      <button class="btn btn-primary" id="btnIniciarVerif" onclick="iniciarVerificacion()">Iniciar Verificación</button>
-      <button class="btn btn-warning hidden" id="btnPausarVerif" onclick="pausarVerificacion()">Pausar</button>
+      <div style="display:flex;flex-direction:column;gap:6px;">
+        <div style="font-size:.8em;color:var(--text-sec);font-weight:600;">Tipo de consulta:</div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.9em;">
+            <input type="radio" name="verifMode" value="normal" checked id="verifModeNormal"> Normal
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.9em;">
+            <input type="radio" name="verifMode" value="force" id="verifModeForce"> Force
+          </label>
+          <span style="font-size:.75em;color:var(--text-sec);">(Force ignora caché y reconsulta todo)</span>
+        </div>
+      </div>
+      <button class="btn btn-primary" id="btnIniciarVerif" onclick="iniciarVerificacion()">▶ Iniciar Verificación</button>
+      <button class="btn btn-warning hidden" id="btnPausarVerif" onclick="pausarVerificacion()">⏸ Pausar</button>
+      <button class="btn hidden" id="btnCancelarVerif" onclick="cancelarVerificacion()" style="background:rgba(234,67,53,.2);border-color:rgba(234,67,53,.5);color:#ea4335;">✕ Cancelar</button>
       <span id="verifStatus" style="font-size:.9em;color:var(--text-sec);"></span>
     </div>
     <div class="progress-bar mb-4" id="verifProgress" style="display:none;">
@@ -270,7 +313,11 @@ input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 2px rg
       <div class="card"><canvas id="chartVerif"></canvas></div>
     </div>
     <div class="flex gap-2 mb-4">
-      <button class="btn btn-success" onclick="exportarVerifCSV()">Exportar CSV</button>
+      <button class="btn btn-success" onclick="exportarVerifCSV()">📥 Exportar CSV</button>
+      <button class="btn hidden" id="btnReintentarFallidos" onclick="reintentarFallidos()"
+        style="background:rgba(255,109,0,.15);border-color:#ff6d00;color:#ff6d00;">
+        🔄 Reintentar fallidos (<span id="countFallidos">0</span>)
+      </button>
     </div>
     <div class="table-wrap" id="tablaVerif" style="max-height:500px;"></div>
   </div>
@@ -288,6 +335,7 @@ input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 2px rg
       <button class="btn btn-primary" onclick="generarReportePDF()">📄 Descargar Reporte PDF</button>
       <span id="reporteMsg" style="font-size:.85em;color:var(--text-sec);"></span>
     </div>
+    <div id="reporteFiltroExplicacion" class="hidden" style="padding:8px 12px;background:#f8f9fa;border:1px solid var(--border);border-radius:var(--radius);margin-bottom:12px;font-size:.78em;color:var(--text-sec);line-height:1.6;"></div>
     <div class="card" id="reportePreview" style="background:#fafbfc;">
       <h3>Vista previa del reporte</h3>
       <div id="reporteContenido" style="font-size:.9em;">
@@ -313,6 +361,17 @@ input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 2px rg
       <label>Delay entre consultas (ms)</label>
       <input type="number" id="cfgDelay" value="500">
     </div>
+    <hr style="margin:16px 0;border:none;border-top:1px solid var(--border);">
+    <h4 style="margin:0 0 12px;font-size:.95em;color:var(--text-sec);">Verificación Force (consulta forzada)</h4>
+    <div class="form-group">
+      <label>URL API Force</label>
+      <input type="text" id="cfgForceUrl" placeholder="URL alternativa para consulta Force">
+    </div>
+    <div class="form-group">
+      <label>API Key Force</label>
+      <input type="password" id="cfgForceKey" placeholder="API Key para consulta Force">
+    </div>
+    <hr style="margin:16px 0;border:none;border-top:1px solid var(--border);">
     <div class="form-group">
       <label>Códigos PEC Propios (separados por coma)</label>
       <input type="text" id="cfgPec">
@@ -385,6 +444,21 @@ function periodoNombreLegible(periodoId) {
   return `Obleas ${MESES[parseInt(mes)] || mes} ${anio}`;
 }
 
+// Normalización de localidades en el frontend (para datos ya guardados)
+const LOCALIDAD_CANON = {
+  'CORDOBA': 'CORDOBA', 'CRDOBA': 'CORDOBA', 'CORODBA': 'CORDOBA', 'CBA': 'CORDOBA',
+  'MALAGUENO': 'MALAGUEÑO', 'MALAGUEÑO': 'MALAGUEÑO', 'MALAGUEO': 'MALAGUEÑO',
+};
+function normLocalFE(str) {
+  if (!str) return str;
+  // Limpiar chars basura de encoding y normalizar
+  let s = str.replace(/[^\x20-\x7E\xC0-\xFF]/g, '').toUpperCase().trim();
+  s = s.replace(/[ÁÀÄÂ]/g, 'A').replace(/[ÉÈËÊ]/g, 'E')
+       .replace(/[ÍÌÏÎ]/g, 'I').replace(/[ÓÒÖÔ]/g, 'O')
+       .replace(/[ÚÙÜÛ]/g, 'U');
+  return LOCALIDAD_CANON[s] || s;
+}
+
 // ============================================================
 // TABS
 // ============================================================
@@ -447,8 +521,8 @@ async function procesarArchivo(file) {
     STATE.totalFiltrado = data.totalFiltrado;
 
     document.getElementById('btnGuardar').classList.remove('hidden');
-    document.getElementById('archivoActual').classList.remove('hidden');
-    document.getElementById('archivoActualNombre').textContent = periodoNombreLegible(STATE.periodo) + ` (${STATE.totalFiltrado} registros filtrados)`;
+    STATE.sinGuardar = true;
+    actualizarArchivoActivo();
     renderTodo();
 
     setTimeout(() => {
@@ -486,19 +560,18 @@ function renderMetricas(containerId, metrics, total, norm) {
   if (!metrics) return;
   const c = document.getElementById(containerId);
   const pctEfectividad = total > 0 ? Math.round((metrics.telefonos.ok / total) * 1000) / 10 : 0;
-  let html = `
-    <div class="metric-card"><div class="value">${total}</div><div class="label">Total Registros</div></div>
-    <div class="metric-card"><div class="value">${metrics.telefonos.ok}</div><div class="label">Teléfonos OK</div></div>
-    <div class="metric-card"><div class="value" style="color:var(--warning)">${metrics.telefonos.mal}</div><div class="label">Teléfonos con Error</div></div>
-    <div class="metric-card"><div class="value" style="color:var(--danger)">${metrics.telefonos.sin}</div><div class="label">Sin Teléfono</div></div>
-    <div class="metric-card"><div class="value" style="color:${pctEfectividad > 70 ? 'var(--success)' : pctEfectividad > 40 ? 'var(--warning)' : 'var(--danger)'}">${pctEfectividad}%</div><div class="label">% Efectividad Tel.</div></div>
-  `;
+  const pctClass = pctEfectividad > 70 ? 'mv-green' : pctEfectividad > 40 ? 'mv-amber' : 'mv-red';
+  let html =
+    '<div class="metric-card-vibrant mv-blue"><div class="value">' + total + '</div><div class="label">Total Registros</div></div>' +
+    '<div class="metric-card-vibrant mv-green"><div class="value">' + metrics.telefonos.ok + '</div><div class="label">Tel\u00e9fonos OK</div></div>' +
+    '<div class="metric-card-vibrant mv-amber"><div class="value">' + metrics.telefonos.mal + '</div><div class="label">Tel\u00e9fonos con Error</div></div>' +
+    '<div class="metric-card-vibrant mv-red"><div class="value">' + metrics.telefonos.sin + '</div><div class="label">Sin Tel\u00e9fono</div></div>' +
+    '<div class="metric-card-vibrant ' + pctClass + '"><div class="value">' + pctEfectividad + '%</div><div class="label">% Efectividad</div></div>';
   if (norm) {
-    html += `
-      <div class="metric-card"><div class="value" style="color:var(--success)">${norm.OK||0}</div><div class="label">Normalizados OK</div></div>
-      <div class="metric-card"><div class="value" style="color:var(--warning)">${norm.LEVE||0}</div><div class="label">Error Leve</div></div>
-      <div class="metric-card"><div class="value" style="color:var(--danger)">${norm.RECHAZAR||0}</div><div class="label">Rechazados</div></div>
-    `;
+    html +=
+      '<div class="metric-card-vibrant mv-teal"><div class="value">' + (norm.OK||0) + '</div><div class="label">Normalizados OK</div></div>' +
+      '<div class="metric-card-vibrant mv-amber"><div class="value">' + (norm.LEVE||0) + '</div><div class="label">Error Leve</div></div>' +
+      '<div class="metric-card-vibrant mv-red"><div class="value">' + (norm.RECHAZAR||0) + '</div><div class="label">Rechazados</div></div>';
   }
   c.innerHTML = html;
 }
@@ -507,6 +580,17 @@ function renderMetricas(containerId, metrics, total, norm) {
 // CHARTS
 // ============================================================
 function destroyChart(key) { if (charts[key]) { charts[key].destroy(); delete charts[key]; } }
+
+// Paleta premium vibrante
+const PALETTE = ['#4f83f1','#2dd4bf','#fb923c','#f472b6','#a78bfa','#34d399','#fbbf24','#60a5fa','#e879f9','#4ade80','#f87171','#38bdf8','#facc15','#c084fc','#fb7185'];
+const DATALABELS_DARK = {
+  formatter: (value, ctx) => {
+    const total = ctx.chart.data.datasets[0].data.reduce((a,b) => a + b, 0);
+    const pct = Math.round(value / total * 100);
+    return pct > 5 ? pct + '%' : '';
+  },
+  color: '#fff', font: { size: 12, weight: 'bold' }
+};
 
 const DATALABELS_OPTS = {
   formatter: (value, ctx) => {
@@ -519,42 +603,81 @@ const DATALABELS_OPTS = {
 function renderChartOriginal() {
   if (!STATE.metricasOriginal) return;
   const m = STATE.metricasOriginal;
-
   destroyChart('tcodtalOrig');
-  charts.tcodtalOrig = new Chart(document.getElementById('chartTcodtalOrig'), {
+  const ctxT = document.getElementById('chartTcodtalOrig');
+  if (ctxT) charts.tcodtalOrig = new Chart(ctxT, {
     type: 'doughnut',
-    data: { labels: Object.keys(m.por_tcodtal), datasets: [{ data: Object.values(m.por_tcodtal), backgroundColor: ['#4285f4','#34a853','#fbbc04','#ea4335','#ab47bc'] }] },
-    options: { responsive: true, plugins: { legend: { display: false }, datalabels: DATALABELS_OPTS } },
+    data: { labels: Object.keys(m.por_tcodtal), datasets: [{ data: Object.values(m.por_tcodtal), backgroundColor: PALETTE, borderColor: '#1a1d2e', borderWidth: 3, hoverOffset: 10 }] },
+    options: { responsive: true, cutout: '65%', animation: { animateRotate: true, duration: 900 }, plugins: { legend: { display: false }, datalabels: DATALABELS_DARK } },
+    plugins: [ChartDataLabels]
+  });
+  destroyChart('telOrig');
+  const ctxB = document.getElementById('chartTelOrig');
+  if (ctxB) charts.telOrig = new Chart(ctxB, {
+    type: 'bar',
+    data: { labels: Object.keys(m.telefonos.detalle), datasets: [{ label: 'Cantidad', data: Object.values(m.telefonos.detalle), backgroundColor: PALETTE, borderRadius: 10, borderSkipped: false }] },
+    options: {
+      responsive: true, animation: { duration: 800 },
+      plugins: { legend: { display: false }, datalabels: { anchor: 'end', align: 'top', color: '#e8eaed', font: { size: 12, weight: 'bold' } } },
+      scales: { x: { grid: { color: 'rgba(232,234,237,.08)' }, ticks: { color: '#9aa0a6' } }, y: { beginAtZero: true, grid: { color: 'rgba(232,234,237,.08)' }, ticks: { color: '#9aa0a6' } } }
+    },
     plugins: [ChartDataLabels]
   });
 
-  destroyChart('telOrig');
-  const td = m.telefonos.detalle;
-  charts.telOrig = new Chart(document.getElementById('chartTelOrig'), {
-    type: 'bar',
-    data: { labels: Object.keys(td), datasets: [{ label: 'Cantidad', data: Object.values(td), backgroundColor: '#4285f4' }] },
-    options: { responsive: true, plugins: { legend: { display: false }, datalabels: { display: false } }, scales: { y: { beginAtZero: true } } }
-  });
+  // Chart PEC (comisionista GNCOBS3) - datos del original completo
+  destroyChart('pecOrig');
+  const ctxPec = document.getElementById('chartPecOrig');
+  if (ctxPec && STATE.registros.length) {
+    const pecCount = {};
+    STATE.registros.forEach(r => {
+      const pec = (r.GNCOBS3 || '(Sin comisionista)').trim() || '(Sin comisionista)';
+      pecCount[pec] = (pecCount[pec] || 0) + 1;
+    });
+    const pecLabels = Object.keys(pecCount), pecVals = Object.values(pecCount);
+    charts.pecOrig = new Chart(ctxPec, {
+      type: 'doughnut',
+      data: { labels: pecLabels, datasets: [{ data: pecVals, backgroundColor: PALETTE, borderColor: '#1a1d2e', borderWidth: 3, hoverOffset: 10 }] },
+      options: { responsive: true, cutout: '60%', animation: { animateRotate: true, duration: 900 }, plugins: { legend: { position: 'bottom', labels: { color: '#e8eaed', padding: 10, font: { size: 11 } } }, datalabels: DATALABELS_DARK } },
+      plugins: [ChartDataLabels]
+    });
+  }
+
+  // Hbar de % error por usuario (original)
+  const wrap = document.getElementById('hbarUsersError');
+  if (wrap && m.por_usuario) {
+    const users = Object.entries(m.por_usuario).sort((a,b) => b[1].pct_err - a[1].pct_err);
+    const maxErr = users[0] ? users[0][1].pct_err : 1;
+    wrap.innerHTML = users.map(([u, d], i) => {
+      const pct = d.pct_err;
+      const color = pct > 50 ? '#f87171' : pct > 25 ? '#fbbf24' : '#34d399';
+      return '<div class="hbar-item">' +
+        '<div class="hbar-label" title="' + u + '">' + u + '</div>' +
+        '<div class="hbar-track"><div class="hbar-fill" style="width:0%;background:linear-gradient(90deg,' + color + ',' + color + '88);" data-target="' + Math.min(pct, 100) + '">' + pct + '%</div></div>' +
+        '<div class="hbar-count" style="color:' + color + ';">' + pct + '%</div>' +
+        '</div>';
+    }).join('');
+    setTimeout(() => wrap.querySelectorAll('.hbar-fill').forEach(el => { el.style.width = el.dataset.target + '%'; }), 80);
+  }
 }
 
 function renderChartFiltrado() {
   if (!STATE.metricasFiltrado) return;
   const m = STATE.metricasFiltrado;
-
   destroyChart('tcodtalFilt');
-  charts.tcodtalFilt = new Chart(document.getElementById('chartTcodtalFilt'), {
+  const ctxT = document.getElementById('chartTcodtalFilt');
+  if (ctxT) charts.tcodtalFilt = new Chart(ctxT, {
     type: 'doughnut',
-    data: { labels: Object.keys(m.por_tcodtal), datasets: [{ data: Object.values(m.por_tcodtal), backgroundColor: ['#4285f4','#34a853','#fbbc04','#ea4335'] }] },
-    options: { responsive: true, plugins: { legend: { display: false }, datalabels: DATALABELS_OPTS } },
+    data: { labels: Object.keys(m.por_tcodtal), datasets: [{ data: Object.values(m.por_tcodtal), backgroundColor: PALETTE, borderColor: '#1a1d2e', borderWidth: 3, hoverOffset: 10 }] },
+    options: { responsive: true, cutout: '65%', animation: { animateRotate: true, duration: 900 }, plugins: { legend: { display: false }, datalabels: DATALABELS_DARK } },
     plugins: [ChartDataLabels]
   });
-
   destroyChart('normFilt');
   const n = STATE.normalizacion || {};
-  charts.normFilt = new Chart(document.getElementById('chartNormFilt'), {
+  const ctxN = document.getElementById('chartNormFilt');
+  if (ctxN) charts.normFilt = new Chart(ctxN, {
     type: 'doughnut',
-    data: { labels: ['OK','Leve','Rechazar'], datasets: [{ data: [n.OK||0, n.LEVE||0, n.RECHAZAR||0], backgroundColor: ['#34a853','#fbbc04','#ea4335'] }] },
-    options: { responsive: true, plugins: { legend: { display: false }, datalabels: DATALABELS_OPTS } },
+    data: { labels: ['OK ✓','Error Leve ⚠','Rechazado ✗'], datasets: [{ data: [n.OK||0, n.LEVE||0, n.RECHAZAR||0], backgroundColor: ['#34d399','#fbbf24','#f87171'], borderColor: '#1a1d2e', borderWidth: 3, hoverOffset: 10 }] },
+    options: { responsive: true, cutout: '65%', animation: { animateRotate: true, duration: 900 }, plugins: { legend: { position: 'bottom', labels: { color: '#e8eaed', padding: 12, font: { size: 11 } } }, datalabels: DATALABELS_DARK } },
     plugins: [ChartDataLabels]
   });
 }
@@ -563,32 +686,29 @@ function renderChartProvinciasLocalidades() {
   if (!STATE.registros.length) return;
   const provCount = {}, locCount = {};
   STATE.registros.forEach(r => {
-    const prov = (r.UPROVINCIA || 'Sin datos').trim();
-    const loc = (r.ULOCALIDAD || 'Sin datos').trim();
+    const prov = normLocalFE((r.UPROVINCIA || 'Sin datos').trim()) || 'Sin datos';
+    const loc  = normLocalFE((r.ULOCALIDAD  || 'Sin datos').trim()) || 'Sin datos';
     provCount[prov] = (provCount[prov] || 0) + 1;
-    locCount[loc] = (locCount[loc] || 0) + 1;
+    locCount[loc]  = (locCount[loc]  || 0) + 1;
   });
-
   const provSorted = Object.entries(provCount).sort((a,b) => b[1]-a[1]);
   const locSorted = Object.entries(locCount).sort((a,b) => b[1]-a[1]).slice(0, 15);
-  const colors = ['#4285f4','#34a853','#fbbc04','#ea4335','#ab47bc','#00bcd4','#ff7043','#8d6e63','#78909c','#66bb6a','#ef5350','#42a5f5','#ffca28','#26c6da','#ec407a'];
-
-  destroyChart('provincias');
-  charts.provincias = new Chart(document.getElementById('chartProvincias'), {
-    type: 'doughnut',
-    data: { labels: provSorted.map(e=>e[0]), datasets: [{ data: provSorted.map(e=>e[1]), backgroundColor: colors }] },
-    options: { responsive: true, plugins: { legend: { display: false }, datalabels: DATALABELS_OPTS } },
-    plugins: [ChartDataLabels]
-  });
-
-  destroyChart('localidades');
-  charts.localidades = new Chart(document.getElementById('chartLocalidades'), {
-    type: 'doughnut',
-    data: { labels: locSorted.map(e=>e[0]), datasets: [{ data: locSorted.map(e=>e[1]), backgroundColor: colors }] },
-    options: { responsive: true, plugins: { legend: { position: 'right', labels: { font: { size: 10 } } }, datalabels: { formatter: v => v, color: '#fff', font: { size: 10, weight: 'bold' } } } },
-    plugins: [ChartDataLabels]
-  });
+  function renderHbar(containerId, data, transform) {
+    const wrap = document.getElementById(containerId);
+    if (!wrap) return;
+    const max = data[0] ? data[0][1] : 1;
+    wrap.innerHTML = data.map(([label, val], i) => {
+      const displayLabel = transform ? transform(label) : label;
+      const pct = Math.round(val / max * 100);
+      const color = PALETTE[i % PALETTE.length];
+      return '<div class="hbar-item"><div class="hbar-label" title="' + displayLabel + '">' + displayLabel + '</div><div class="hbar-track"><div class="hbar-fill" style="width:0%;background:linear-gradient(90deg,' + color + ',' + color + '88);" data-target="' + pct + '">' + val + '</div></div><div class="hbar-count">' + val + '</div></div>';
+    }).join('');
+    setTimeout(() => wrap.querySelectorAll('.hbar-fill').forEach(el => { el.style.width = el.dataset.target + '%'; }), 80);
+  }
+  renderHbar('hbarProvincias', provSorted, normLocalFE);
+  renderHbar('hbarLocalidades', locSorted, normLocalFE);
 }
+
 
 // ============================================================
 // USER TABLES
@@ -756,21 +876,31 @@ let verifInterval = null;
 async function iniciarVerificacion() {
   if (!STATE.registros.length) { alert('Primero procesá un archivo.'); return; }
 
-  const config = STATE.config;
-  if (!config.apiKey) { alert('Configurá la API Key en la pestaña Configuración.'); switchTab('config'); return; }
+  const verifMode = document.querySelector('input[name="verifMode"]:checked')?.value || 'normal';
+  const useForce = verifMode === 'force';
+  const config = { ...STATE.config };
+  if (useForce) {
+    if (!config.forceApiUrl) { alert('Configurá la URL API Force en Configuración.'); switchTab('config'); return; }
+    config.apiUrl = config.forceApiUrl;
+    config.apiKey = config.forceApiKey || config.apiKey;
+  } else {
+    if (!config.apiKey) { alert('Configurá la API Key en la pestaña Configuración.'); switchTab('config'); return; }
+  }
 
   const registros = STATE.registros.filter(r => r.UDOMINIO);
+  document.getElementById('verifStatus').textContent = useForce ? '⚡ Modo Force activo' : '';
 
   try {
     const resp = await authFetch('/api/verificar/iniciar', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ registros, config })
+      body: JSON.stringify({ registros, config, force: useForce })
     });
     const data = await resp.json();
     if (!data.ok) { alert(data.error); return; }
 
     document.getElementById('btnIniciarVerif').disabled = true;
     document.getElementById('btnPausarVerif').classList.remove('hidden');
+    document.getElementById('btnCancelarVerif').classList.remove('hidden');
     document.getElementById('verifProgress').style.display = 'block';
     document.getElementById('verifLog').style.display = 'block';
     document.getElementById('verifLog').innerHTML = '';
@@ -795,7 +925,11 @@ async function iniciarVerificacion() {
       if (!st.running) {
         clearInterval(verifInterval);
         document.getElementById('btnIniciarVerif').disabled = false;
-        document.getElementById('btnPausarVerif').classList.add('hidden');
+        const btnP = document.getElementById('btnPausarVerif');
+        btnP.classList.add('hidden');
+        btnP.textContent = '⏸ Pausar';
+        btnP.className = 'btn btn-warning hidden';
+        document.getElementById('btnCancelarVerif').classList.add('hidden');
 
         if (st.results) {
           STATE.verificacion = st.results;
@@ -807,8 +941,36 @@ async function iniciarVerificacion() {
   } catch (e) { alert('Error: ' + e.message); }
 }
 
+async function cancelarVerificacion() {
+  if (!confirm('¿Cancelar la verificación en curso? Perderás el progreso actual.')) return;
+  await authFetch('/api/verificar/cancelar', { method: 'POST' });
+  clearInterval(verifInterval);
+  document.getElementById('btnIniciarVerif').disabled = false;
+  document.getElementById('btnPausarVerif').classList.add('hidden');
+  document.getElementById('btnCancelarVerif').classList.add('hidden');
+  const btnP = document.getElementById('btnPausarVerif');
+  btnP.textContent = '⏸ Pausar';
+  btnP.className = 'btn btn-warning hidden';
+  document.getElementById('verifStatus').textContent = '✕ Cancelado';
+}
+
 async function pausarVerificacion() {
-  await authFetch('/api/verificar/pausar', { method: 'POST' });
+  const btn = document.getElementById('btnPausarVerif');
+  const esPausando = btn.textContent.includes('Pausar');
+  if (esPausando) {
+    await authFetch('/api/verificar/pausar', { method: 'POST' });
+    btn.textContent = '▶ Reanudar';
+    btn.className = 'btn btn-success';
+    btn.setAttribute('onclick', 'pausarVerificacion()');
+    document.getElementById('verifStatus').textContent = '⏸ Pausado';
+  } else {
+    const resp = await authFetch('/api/verificar/reanudar', { method: 'POST' });
+    const data = await resp.json();
+    if (!data.ok) { alert(data.error); return; }
+    btn.textContent = '⏸ Pausar';
+    btn.className = 'btn btn-warning';
+    document.getElementById('verifStatus').textContent = '';
+  }
 }
 
 function renderVerifResultados() {
@@ -822,14 +984,50 @@ function renderVerifResultados() {
     resumen[c] = (resumen[c] || 0) + 1;
   });
 
-  const labels = { NUESTRO_PEC_NUESTRO_TALLER: 'Nuestro PEC + Taller', NUESTRO_PEC_OTRO_TALLER: 'Nuestro PEC + Ext.', OTRO_PEC: 'Otro PEC', NO_RENOVO: 'No Renovó', PENDIENTE: 'Pendiente' };
-  const colors = { NUESTRO_PEC_NUESTRO_TALLER: '#34a853', NUESTRO_PEC_OTRO_TALLER: '#4285f4', OTRO_PEC: '#fbbc04', NO_RENOVO: '#ea4335', PENDIENTE: '#9e9e9e' };
+  const labels = {
+    NUESTRO_PEC_NUESTRO_TALLER: 'Nuestro PEC + Nuestro Taller',
+    NUESTRO_PEC_OTRO_TALLER:    'Nuestro PEC + Taller Externo',
+    OTRO_PEC:                   'Otro PEC',
+    NO_RENOVO:                  'No Renovó',
+    SIN_REGISTRO_GNC:           'Sin registro GNC',
+    SIN_GNC:                    'Sin GNC',
+    BAJA_GNC:                   'Dado de baja / Desmontaje',
+    FORMATO_INVALIDO:           'Formato inválido',
+    ERROR_TECNICO:              'Error técnico (reintentar)',
+    PROCESANDO:                 'Procesando...',
+    PENDIENTE:                  'Pendiente'
+  };
+  const colors = {
+    NUESTRO_PEC_NUESTRO_TALLER: '#34a853',
+    NUESTRO_PEC_OTRO_TALLER:    '#4285f4',
+    OTRO_PEC:                   '#fbbc04',
+    NO_RENOVO:                  '#ea4335',
+    SIN_REGISTRO_GNC:           '#9e9e9e',
+    SIN_GNC:                    '#b0bec5',
+    BAJA_GNC:                   '#6d4c41',
+    FORMATO_INVALIDO:           '#78909c',
+    ERROR_TECNICO:              '#ff6d00',
+    PROCESANDO:                 '#7c4dff',
+    PENDIENTE:                  '#9e9e9e'
+  };
 
   let metricsHtml = '';
   Object.entries(resumen).forEach(([k, v]) => {
     metricsHtml += `<div class="metric-card"><div class="value" style="color:${colors[k] || '#333'}">${v}</div><div class="label">${labels[k] || k}</div></div>`;
   });
   document.getElementById('verifMetrics').innerHTML = metricsHtml;
+
+  // Contar errores reintentables (código 3 = ERROR_TECNICO, código 4 = PROCESANDO)
+  const fallidos = STATE.verificacion.filter(r =>
+    r.clasificacion.codigo === 'ERROR_TECNICO' || r.clasificacion.codigo === 'PROCESANDO'
+  );
+  const btnFallidos = document.getElementById('btnReintentarFallidos');
+  if (fallidos.length > 0) {
+    document.getElementById('countFallidos').textContent = fallidos.length;
+    btnFallidos.classList.remove('hidden');
+  } else {
+    btnFallidos.classList.add('hidden');
+  }
 
   destroyChart('verif');
   charts.verif = new Chart(document.getElementById('chartVerif'), {
@@ -841,11 +1039,96 @@ function renderVerifResultados() {
   let html = '<table><thead><tr><th>Dominio</th><th>Nombre</th><th>Clasificación</th><th>PEC</th><th>Taller</th><th>Fecha Op.</th><th>Nuevo Vto.</th></tr></thead><tbody>';
   STATE.verificacion.forEach(r => {
     const c = r.clasificacion;
-    const badge = c.codigo === 'NO_RENOVO' ? 'badge-rechazar' : c.codigo.startsWith('NUESTRO') ? 'badge-ok' : 'badge-leve';
+    const badgeMap = {
+      NUESTRO_PEC_NUESTRO_TALLER: 'badge-ok', NUESTRO_PEC_OTRO_TALLER: 'badge-ok',
+      OTRO_PEC: 'badge-leve', NO_RENOVO: 'badge-rechazar',
+      SIN_REGISTRO_GNC: 'badge-leve', SIN_GNC: 'badge-leve',
+      BAJA_GNC: 'badge-rechazar', FORMATO_INVALIDO: 'badge-leve',
+      ERROR_TECNICO: 'badge-leve', PROCESANDO: 'badge-leve'
+    };
+    const badge = badgeMap[c.codigo] || 'badge-leve';
     html += `<tr><td>${r.registro.UDOMINIO}</td><td>${r.registro.UAPEYNOM}</td><td><span class="badge ${badge}">${c.texto}</span></td><td>${c.pecNombre}</td><td>${c.tallerNombre}</td><td>${c.fechaOp}</td><td>${c.nuevoVto}</td></tr>`;
   });
   html += '</tbody></table>';
   document.getElementById('tablaVerif').innerHTML = html;
+}
+
+async function reintentarFallidos() {
+  const fallidos = (STATE.verificacion || []).filter(r =>
+    r.clasificacion.codigo === 'ERROR_TECNICO' || r.clasificacion.codigo === 'PROCESANDO'
+  );
+  if (!fallidos.length) return;
+
+  const confirmMsg = `¿Reintentar ${fallidos.length} consultas con error técnico o procesando?\n\nSe usará el mismo tipo de consulta (Normal/Force) que al inicio.`;
+  if (!confirm(confirmMsg)) return;
+
+  // Extraer los registros originales de los fallidos
+  const registrosAReeintentar = fallidos.map(r => r.registro);
+
+  // Remover los fallidos del resultado actual para reemplazarlos
+  STATE.verificacion = STATE.verificacion.filter(r =>
+    r.clasificacion.codigo !== 'ERROR_TECNICO' && r.clasificacion.codigo !== 'PROCESANDO'
+  );
+
+  // Ocultar el botón mientras corre
+  document.getElementById('btnReintentarFallidos').classList.add('hidden');
+  document.getElementById('verifStatus').textContent = `🔄 Reintentando ${registrosAReeintentar.length} consultas...`;
+
+  // Iniciar verificación solo con los fallidos
+  const verifMode = document.querySelector('input[name="verifMode"]:checked')?.value || 'normal';
+  const useForce  = verifMode === 'force';
+  const config    = { ...STATE.config };
+  if (useForce && config.forceApiUrl) {
+    config.apiUrl = config.forceApiUrl;
+    config.apiKey = config.forceApiKey || config.apiKey;
+  }
+
+  try {
+    const resp = await authFetch('/api/verificar/iniciar', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ registros: registrosAReeintentar, config, force: useForce })
+    });
+    const data = await resp.json();
+    if (!data.ok) { alert('Error: ' + data.error); return; }
+
+    document.getElementById('btnIniciarVerif').disabled = true;
+    document.getElementById('btnPausarVerif').classList.remove('hidden');
+    document.getElementById('btnCancelarVerif').classList.remove('hidden');
+    document.getElementById('verifProgress').style.display = 'block';
+    document.getElementById('verifLog').style.display = 'block';
+
+    let lastLog = 0;
+    verifInterval = setInterval(async () => {
+      const sr = await authFetch(`/api/verificar/estado?lastLog=${lastLog}`);
+      const st = await sr.json();
+      const pct = st.total ? Math.round(st.progress / st.total * 100) : 0;
+      document.getElementById('verifProgressFill').style.width = pct + '%';
+      const logBox = document.getElementById('verifLog');
+      st.log.forEach(l => {
+        const div = document.createElement('div');
+        div.className = l.tipo === 'ok' ? 'log-ok' : l.tipo === 'err' ? 'log-err' : 'log-warn';
+        div.textContent = l.msg;
+        logBox.appendChild(div);
+      });
+      logBox.scrollTop = logBox.scrollHeight;
+      lastLog = st.logOffset;
+
+      if (!st.running) {
+        clearInterval(verifInterval);
+        document.getElementById('btnIniciarVerif').disabled = false;
+        const btnP = document.getElementById('btnPausarVerif');
+        btnP.classList.add('hidden'); btnP.textContent = '⏸ Pausar'; btnP.className = 'btn btn-warning hidden';
+        document.getElementById('btnCancelarVerif').classList.add('hidden');
+
+        if (st.results) {
+          // Fusionar resultados del reintento con los anteriores
+          STATE.verificacion = [...STATE.verificacion, ...st.results];
+          document.getElementById('verifStatus').textContent = '✅ Reintento completo';
+          renderVerifResultados();
+        }
+      }
+    }, 1000);
+  } catch (e) { alert('Error: ' + e.message); }
 }
 
 function exportarVerifCSV() {
@@ -869,11 +1152,15 @@ async function cargarConfig() {
   try {
     const resp = await authFetch('/api/config');
     STATE.config = await resp.json();
-    document.getElementById('cfgApiUrl').value = STATE.config.apiUrl || '';
+    // Pre-cargar URL actual si el campo está vacío
+    const defaultApiUrl = STATE.config.apiUrl || 'https://consultas-gnc.arielxp.workers.dev';
+    document.getElementById('cfgApiUrl').value = defaultApiUrl;
     document.getElementById('cfgApiKey').value = STATE.config.apiKey || '';
     document.getElementById('cfgDelay').value = STATE.config.delay || 500;
     document.getElementById('cfgPec').value = (STATE.config.pecPropios || []).join(', ');
     document.getElementById('cfgTaller').value = (STATE.config.talleresPropios || []).join(', ');
+    document.getElementById('cfgForceUrl').value = STATE.config.forceApiUrl || '';
+    document.getElementById('cfgForceKey').value = STATE.config.forceApiKey || '';
     actualizarHeaderConfig();
   } catch (e) { console.error('Error cargando config:', e); }
 }
@@ -885,6 +1172,25 @@ function actualizarHeaderConfig() {
   document.getElementById('headerPecCods').textContent = 'PEC: ' + (pecs.join(', ') || 'No configurados');
   document.getElementById('tooltipCodigos').innerHTML =
     '<strong>Talleres:</strong> ' + (talleres.join(', ') || 'Ninguno') + '<br><strong>PEC:</strong> ' + (pecs.join(', ') || 'Ninguno');
+}
+
+function actualizarArchivoActivo() {
+  const badge = document.getElementById('archivoActivoBadge');
+  const nombre = document.getElementById('archivoActivoNombre');
+  if (STATE.periodo && badge) {
+    badge.style.display = 'flex';
+    badge.classList.remove('hidden');
+    nombre.textContent = periodoNombreLegible(STATE.periodo);
+  } else if (badge) {
+    badge.style.display = 'none';
+  }
+  // También actualizar el alert en tab archivos
+  const archivoActual = document.getElementById('archivoActual');
+  const archivoActualNombre = document.getElementById('archivoActualNombre');
+  if (STATE.periodo && archivoActual) {
+    archivoActual.classList.remove('hidden');
+    archivoActualNombre.textContent = periodoNombreLegible(STATE.periodo) + ' (' + STATE.totalFiltrado + ' registros filtrados)';
+  }
 }
 
 function toggleFiltroDetalle() {
@@ -911,7 +1217,9 @@ async function guardarConfig() {
     apiKey: document.getElementById('cfgApiKey').value.trim(),
     delay: parseInt(document.getElementById('cfgDelay').value) || 500,
     pecPropios: document.getElementById('cfgPec').value.split(',').map(s => s.trim()).filter(Boolean),
-    talleresPropios: document.getElementById('cfgTaller').value.split(',').map(s => s.trim()).filter(Boolean)
+    talleresPropios: document.getElementById('cfgTaller').value.split(',').map(s => s.trim()).filter(Boolean),
+    forceApiUrl: document.getElementById('cfgForceUrl').value.trim(),
+    forceApiKey: document.getElementById('cfgForceKey').value.trim()
   };
   try {
     await authFetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(STATE.config) });
@@ -955,7 +1263,8 @@ async function guardarPeriodo() {
     });
     const data = await resp.json();
     if (data.ok) {
-      alert(`${periodoNombreLegible(STATE.periodo)} guardado (v${data.periodo.version})`);
+      STATE.sinGuardar = false;
+      alert(periodoNombreLegible(STATE.periodo) + ' guardado (v' + data.periodo.version + ')');
       cargarPeriodos();
     }
   } catch (e) { alert('Error: ' + e.message); }
@@ -969,18 +1278,23 @@ async function cargarPeriodos() {
     const resp = await authFetch('/api/periodos');
     if (!resp) return;
     const periodos = await resp.json();
+    periodos.sort((a, b) => new Date(b.guardadoEn) - new Date(a.guardadoEn));
     if (periodos.length) {
       let html = '';
       periodos.forEach(p => {
         const nombre = periodoNombreLegible(p.periodoId);
-        html += `<div class="file-card" style="cursor:pointer;" onclick="cargarPeriodo('${p.periodoId}')">
-          <div><div class="file-info">📄 ${nombre}</div><div class="file-meta">v${p.version} — Guardado: ${new Date(p.guardadoEn).toLocaleString('es-AR')} — ${p.resumen.totalFiltrado} filtrados</div></div>
-          <span style="color:var(--primary);font-size:.85em;">Cargar →</span>
-        </div>`;
+        const activo = STATE.periodo === p.periodoId;
+        const bordeActivo = activo ? 'border-color:var(--primary);background:#f0f6ff;' : '';
+        const badgeActivo = activo ? '<span style="background:var(--primary);color:#fff;border-radius:10px;padding:1px 8px;font-size:.75em;margin-left:6px;">Activo</span>' : '';
+        html += `<div class="file-card" style="cursor:pointer;${bordeActivo}" onclick="cargarPeriodo('${p.periodoId}')">` +
+          `<div><div class="file-info">\u{1F4C4} ${nombre}${badgeActivo}</div>` +
+          `<div class="file-meta">v${p.version} \u2014 Guardado: ${new Date(p.guardadoEn).toLocaleString('es-AR')} \u2014 ${p.resumen.totalFiltrado} filtrados</div></div>` +
+          `<span style="color:var(--primary);font-size:.85em;">Cargar \u2192</span>` +
+          `</div>`;
       });
       document.getElementById('listaPeriodos').innerHTML = html;
     } else {
-      document.getElementById('listaPeriodos').innerHTML = '<p style="color:var(--text-sec);font-size:.9em;">No hay períodos guardados aún. Subí un CSV para comenzar.</p>';
+      document.getElementById('listaPeriodos').innerHTML = '<p style="color:var(--text-sec);font-size:.9em;">No hay per\u00edodos guardados a\u00fan. Sub\u00ed un CSV para comenzar.</p>';
     }
   } catch (e) { console.error(e); }
 }
@@ -1001,8 +1315,8 @@ async function cargarPeriodo(id) {
     STATE.verificacion = data.verificacion?.detalle || null;
 
     document.getElementById('btnGuardar').classList.remove('hidden');
-    document.getElementById('archivoActual').classList.remove('hidden');
-    document.getElementById('archivoActualNombre').textContent = periodoNombreLegible(STATE.periodo) + ` (${STATE.totalFiltrado} registros filtrados)`;
+    STATE.sinGuardar = true;
+    actualizarArchivoActivo();
     renderTodo();
 
     if (STATE.verificacion) renderVerifResultados();
@@ -1066,7 +1380,7 @@ function renderReportePreview() {
 
   const provCount = {};
   STATE.registros.forEach(r => {
-    const p = (r.UPROVINCIA || 'Sin datos').trim();
+    const p = normLocalFE((r.UPROVINCIA || 'Sin datos').trim()) || 'Sin datos';
     provCount[p] = (provCount[p] || 0) + 1;
   });
   const topProv = Object.entries(provCount).sort((a,b) => b[1]-a[1]).slice(0,5);
@@ -1085,6 +1399,18 @@ function renderReportePreview() {
 
 function generarReportePDF() {
   if (!STATE.periodo || !STATE.registros.length) { alert('Primero cargá un archivo CSV.'); return; }
+
+  // Mostrar explicacion de filtros en la preview
+  const filtroBox = document.getElementById('reporteFiltroExplicacion');
+  if (filtroBox) {
+    const talleres = STATE.config.talleresPropios || [];
+    const lineasFiltro = talleres.map((cod, i) => i === 0
+      ? `${cod}: solo con Comisionista (GNCOBS3) vacío`
+      : `${cod}: cualquier valor de Comisionista`
+    );
+    filtroBox.innerHTML = '<strong>Filtro aplicado:</strong> ' + lineasFiltro.join(' · ');
+    filtroBox.classList.remove('hidden');
+  }
 
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF();
@@ -1143,7 +1469,7 @@ function generarReportePDF() {
   y = doc.lastAutoTable.finalY + 12;
   doc.text('Distribución por Provincia', 14, y);
   const provCount = {};
-  STATE.registros.forEach(r => { const p = (r.UPROVINCIA||'').trim(); provCount[p] = (provCount[p]||0)+1; });
+  STATE.registros.forEach(r => { const p = normLocalFE((r.UPROVINCIA||'').trim())||''; provCount[p] = (provCount[p]||0)+1; });
   doc.autoTable({
     startY: y + 4,
     head: [['Provincia', 'Cantidad', '% del Total']],
@@ -1169,10 +1495,35 @@ function generarReportePDF() {
 }
 
 // ============================================================
+// BEFOREUNLOAD - aviso al salir sin guardar
+// ============================================================
+window.addEventListener('beforeunload', (e) => {
+  if (STATE.sinGuardar) {
+    e.preventDefault();
+    e.returnValue = 'Tenés cambios sin guardar. ¿Seguro que querés salir?';
+    return e.returnValue;
+  }
+});
+
+// ============================================================
 // INIT
 // ============================================================
 cargarConfig();
-cargarPeriodos();
+cargarPeriodosYAutoCargar();
+
+async function cargarPeriodosYAutoCargar() {
+  await cargarPeriodos();
+  // Si hay períodos guardados, auto-cargar el más reciente (el primero de la lista ya ordenada)
+  try {
+    const resp = await authFetch('/api/periodos');
+    if (!resp) return;
+    const periodos = await resp.json();
+    periodos.sort((a, b) => new Date(b.guardadoEn) - new Date(a.guardadoEn));
+    if (periodos.length > 0 && !STATE.periodo) {
+      await cargarPeriodo(periodos[0].periodoId);
+    }
+  } catch(e) { console.error(e); }
+}
 </script>
 </body>
 </html>

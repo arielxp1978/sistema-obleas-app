@@ -148,11 +148,18 @@ let verifState = { running: false, paused: false, progress: 0, total: 0, results
 async function ejecutarVerificacion(registros, config, startFrom = 0) {
   const delay = config.delay || 500;
   for (let i = startFrom; i < registros.length; i++) {
-    if (verifState.paused) {
-      verifState.log.push({ tipo: 'warn', msg: `Pausado en registro ${i + 1} de ${registros.length}` });
-      verifState._pendingRegistros = registros;
-      verifState._pendingConfig = config;
-      verifState._pausedAt = i;
+    if (verifState.paused || verifState.cancelled) {
+      if (verifState.cancelled) {
+        verifState.log.push({ tipo: 'warn', msg: 'Verificación cancelada.' });
+        verifState.running = false;
+        verifState.cancelled = false;
+      } else {
+        verifState.log.push({ tipo: 'warn', msg: `Pausado en registro ${i + 1} de ${registros.length}` });
+        verifState._pendingRegistros = registros;
+        verifState._pendingConfig = config;
+        verifState._pausedAt = i;
+        verifState.running = false; // liberar para poder reanudar o iniciar nueva
+      }
       return;
     }
     const r = registros[i];
@@ -177,7 +184,8 @@ async function ejecutarVerificacion(registros, config, startFrom = 0) {
 
 app.post('/api/verificar/iniciar', async (req, res) => {
   const { registros, config } = req.body;
-  if (verifState.running) return res.json({ ok: false, error: 'Ya hay una verificación en curso' });
+  // Permitir iniciar si está pausado (ya tiene running=false) pero no si está activamente corriendo
+  if (verifState.running && !verifState.paused) return res.json({ ok: false, error: 'Ya hay una verificación en curso' });
   if (!config?.apiKey) return res.json({ ok: false, error: 'Falta API Key' });
 
   verifState = { running: true, paused: false, progress: 0, total: registros.length, results: [], log: [], _pendingRegistros: [], _pendingConfig: null };
@@ -188,19 +196,27 @@ app.post('/api/verificar/iniciar', async (req, res) => {
 
 app.post('/api/verificar/pausar', (req, res) => {
   verifState.paused = true;
+  // running se pondrá false en el próximo ciclo del loop
   res.json({ ok: true });
 });
 
 app.post('/api/verificar/reanudar', (req, res) => {
-  if (verifState.running && !verifState.paused) return res.json({ ok: false, error: 'Ya está corriendo' });
   if (!verifState._pendingRegistros?.length) return res.json({ ok: false, error: 'No hay verificación pausada para reanudar' });
-
   verifState.paused = false;
   verifState.running = true;
   verifState.log.push({ tipo: 'info', msg: `Reanudando desde registro ${verifState._pausedAt + 1}` });
   res.json({ ok: true, resumeFrom: verifState._pausedAt });
-
   ejecutarVerificacion(verifState._pendingRegistros, verifState._pendingConfig, verifState._pausedAt);
+});
+
+app.post('/api/verificar/cancelar', (req, res) => {
+  verifState.cancelled = true;
+  verifState.paused = false;
+  // Si ya no está corriendo, reseteamos directamente
+  if (!verifState.running) {
+    verifState = { running: false, paused: false, cancelled: false, progress: 0, total: 0, results: verifState.results, log: verifState.log, _pendingRegistros: [], _pendingConfig: null };
+  }
+  res.json({ ok: true });
 });
 
 app.get('/api/verificar/estado', (req, res) => {
