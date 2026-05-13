@@ -18,6 +18,14 @@ body { font-family:'Segoe UI',system-ui,sans-serif; background:linear-gradient(1
 .btn:hover { background:#1557b0; }
 .error { color:#ea4335; font-size:.85em; margin-top:12px; display:none; }
 .logo { font-size:2.2em; margin-bottom:12px; }
+.divider { display:flex; align-items:center; gap:10px; margin:20px 0 16px; color:#9aa0a6; font-size:.8em; }
+.divider::before,.divider::after { content:''; flex:1; height:1px; background:#dadce0; }
+.btn-google { display:flex; align-items:center; justify-content:center; gap:10px; width:100%; padding:11px; background:#fff; color:#3c4043; border:1px solid #dadce0; border-radius:8px; font-size:.95em; font-weight:500; cursor:pointer; transition:.2s; text-decoration:none; }
+.btn-google:hover { background:#f8f9fa; border-color:#c6c9cc; box-shadow:0 1px 4px rgba(0,0,0,.1); }
+.btn-google svg { width:18px; height:18px; flex-shrink:0; }
+.fallback-toggle { margin-top:16px; font-size:.8em; color:#9aa0a6; cursor:pointer; }
+.fallback-toggle:hover { color:#5f6368; }
+.fallback-section { display:none; margin-top:12px; }
 </style>
 </head>
 <body>
@@ -25,16 +33,54 @@ body { font-family:'Segoe UI',system-ui,sans-serif; background:linear-gradient(1
   <div class="logo">🔧</div>
   <h1>Nova GNC</h1>
   <p class="subtitle">Sistema de Gestión de Obleas</p>
-  <form onsubmit="login(event)">
-    <div class="form-group">
-      <label>Clave de acceso</label>
-      <input type="password" id="clave" placeholder="Ingresá la clave" autofocus>
-    </div>
-    <button type="submit" class="btn">Ingresar</button>
-    <p class="error" id="error">Clave incorrecta</p>
-  </form>
+
+  <a href="/auth/google" class="btn-google">
+    <svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+      <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+      <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+      <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+      <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.35-8.16 2.35-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+    </svg>
+    Ingresar con Google (@novagnc.com.ar)
+  </a>
+
+  <p id="error-google" class="error" style="display:none"></p>
+
+  <p class="fallback-toggle" onclick="toggleFallback()">Acceso de emergencia ▾</p>
+  <div class="fallback-section" id="fallback-section">
+    <div class="divider">clave de emergencia</div>
+    <form onsubmit="login(event)">
+      <div class="form-group">
+        <label>Clave de acceso</label>
+        <input type="password" id="clave" placeholder="Ingresá la clave">
+      </div>
+      <button type="submit" class="btn">Ingresar</button>
+      <p class="error" id="error">Clave incorrecta</p>
+    </form>
+  </div>
 </div>
 <script>
+// Mostrar error de Google si viene en la URL
+const params = new URLSearchParams(window.location.search);
+const errGoogle = params.get('error');
+if (errGoogle) {
+  const msgs = {
+    google_denied: 'Cancelaste el acceso con Google.',
+    token_failed: 'Error al conectar con Google. Intentá de nuevo.',
+    no_email: 'No se pudo obtener tu email de Google.',
+    domain_not_allowed: 'Tu cuenta no es @novagnc.com.ar.',
+    server_error: 'Error interno. Usá la clave de emergencia.'
+  };
+  const el = document.getElementById('error-google');
+  el.textContent = msgs[errGoogle] || 'Error desconocido.';
+  el.style.display = 'block';
+}
+
+function toggleFallback() {
+  const sec = document.getElementById('fallback-section');
+  sec.style.display = sec.style.display === 'block' ? 'none' : 'block';
+}
+
 async function login(e) {
   e.preventDefault();
   const clave = document.getElementById('clave').value;

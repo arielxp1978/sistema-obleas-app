@@ -4,6 +4,7 @@ const cors = require('cors');
 const path = require('path');
 const crypto = require('crypto');
 const fs = require('fs');
+const { Pool } = require('pg');
 const { procesarCompleto } = require('./lib/procesar');
 const { clasificarPatente, consultarPatente } = require('./lib/verificar');
 const { guardarPeriodo, leerPeriodo, listarPeriodos, eliminarPeriodo, generarHistorial } = require('./lib/storage');
@@ -12,10 +13,24 @@ const app = express();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 const PORT = process.env.PORT || 3000;
 
-// Clave de acceso: se toma de variable de entorno o default
 const APP_CLAVE = process.env.APP_CLAVE || 'nova2026';
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
+const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
+const GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI || 'http://192.168.0.18:3080/auth/google/callback';
+const ALLOWED_DOMAIN = 'novagnc.com.ar';
 
-// Sesiones en memoria (token → timestamp)
+// Pool PostgreSQL cdp_nova (solo para verificar/crear usuarios Google)
+const pool = new Pool({
+  host: process.env.PGHOST,
+  port: parseInt(process.env.PGPORT || '5432'),
+  database: process.env.PGDATABASE || 'cdp_nova',
+  user: process.env.PGUSER,
+  password: process.env.PGPASSWORD,
+  ssl: process.env.PGSSL === 'true' ? { rejectUnauthorized: false } : false,
+  connectionTimeoutMillis: 5000,
+});
+
+// Sesiones en memoria: token → { ts, nombre, email, metodo }
 const sessions = {};
 const SESSION_DURATION = 24 * 60 * 60 * 1000; // 24 horas
 
@@ -23,9 +38,16 @@ function generarToken() {
   return crypto.randomBytes(32).toString('hex');
 }
 
+function crearSesion(nombre, email, metodo) {
+  limpiarSesiones();
+  const token = generarToken();
+  sessions[token] = { ts: Date.now(), nombre, email, metodo };
+  return token;
+}
+
 function limpiarSesiones() {
   const now = Date.now();
-  Object.keys(sessions).forEach(t => { if (now - sessions[t] > SESSION_DURATION) delete sessions[t]; });
+  Object.keys(sessions).forEach(t => { if (now - sessions[t].ts > SESSION_DURATION) delete sessions[t]; });
 }
 
 app.use(cors());
@@ -35,13 +57,11 @@ app.use(express.json({ limit: '50mb' }));
 // AUTH
 // ============================================================
 
-// Login endpoint (público)
+// Login con clave (fallback de emergencia)
 app.post('/api/login', (req, res) => {
   const { clave } = req.body;
   if (clave === APP_CLAVE) {
-    limpiarSesiones();
-    const token = generarToken();
-    sessions[token] = Date.now();
+    const token = crearSesion('Admin', '', 'clave');
     res.json({ ok: true, token });
   } else {
     res.status(401).json({ ok: false, error: 'Clave incorrecta' });
@@ -56,31 +76,116 @@ app.get('/login.html', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'login.html'));
 });
 
+// Google OAuth — paso 1: redirigir a Google
+app.get('/auth/google', (req, res) => {
+  if (!GOOGLE_CLIENT_ID) return res.status(500).send('Google OAuth no configurado');
+  const url = 'https://accounts.google.com/o/oauth2/v2/auth'
+    + '?client_id=' + GOOGLE_CLIENT_ID
+    + '&redirect_uri=' + encodeURIComponent(GOOGLE_REDIRECT_URI)
+    + '&response_type=code'
+    + '&scope=' + encodeURIComponent('openid email profile')
+    + '&access_type=offline'
+    + '&prompt=select_account'
+    + '&hd=' + ALLOWED_DOMAIN;
+  res.redirect(url);
+});
+
+// Google OAuth — paso 2: callback
+app.get('/auth/google/callback', async (req, res) => {
+  try {
+    const { code, error } = req.query;
+    if (error || !code) return res.redirect('/login.html?error=google_denied');
+
+    // Intercambiar code por access_token
+    const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        code,
+        client_id: GOOGLE_CLIENT_ID,
+        client_secret: GOOGLE_CLIENT_SECRET,
+        redirect_uri: GOOGLE_REDIRECT_URI,
+        grant_type: 'authorization_code'
+      })
+    });
+    const tokens = await tokenRes.json();
+    if (!tokens.access_token) {
+      console.error('Google token error:', tokens);
+      return res.redirect('/login.html?error=token_failed');
+    }
+
+    // Obtener datos del usuario
+    const userRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+      headers: { Authorization: 'Bearer ' + tokens.access_token }
+    });
+    const googleUser = await userRes.json();
+    if (!googleUser.email) return res.redirect('/login.html?error=no_email');
+
+    // Verificar dominio
+    const domain = googleUser.email.split('@')[1];
+    if (domain !== ALLOWED_DOMAIN) return res.redirect('/login.html?error=domain_not_allowed');
+
+    // Buscar o crear usuario en panel.usuarios (cdp_nova)
+    let nombre = googleUser.name || googleUser.email.split('@')[0];
+    try {
+      const existing = await pool.query(
+        'SELECT id, nombre FROM panel.usuarios WHERE email = $1 AND activo = true',
+        [googleUser.email]
+      );
+      if (existing.rows.length > 0) {
+        nombre = existing.rows[0].nombre || nombre;
+        await pool.query(
+          'UPDATE panel.usuarios SET ultimo_login = NOW(), nombre = $1 WHERE id = $2',
+          [googleUser.name || nombre, existing.rows[0].id]
+        ).catch(() => {});
+      } else {
+        // Auto-crear con rol básico
+        await pool.query(
+          "INSERT INTO panel.usuarios (nombre, email, password_hash, rol, secciones_permitidas, activo) VALUES ($1, $2, 'google_oauth', 'operador', '{dashboard}', true)",
+          [nombre, googleUser.email]
+        ).catch(() => {});
+      }
+    } catch (dbErr) {
+      console.error('DB error en Google callback (no bloqueante):', dbErr.message);
+      // Continuar igual: si la DB falla, el dominio ya fue verificado
+    }
+
+    const token = crearSesion(nombre, googleUser.email, 'google');
+    const usuarioJson = JSON.stringify({ nombre, email: googleUser.email, metodo: 'google' });
+
+    res.setHeader('Set-Cookie', 'token=' + token + '; Path=/; Max-Age=86400; SameSite=Strict');
+    res.send('<!DOCTYPE html><html><body><script>'
+      + 'localStorage.setItem("token","' + token + '");'
+      + 'localStorage.setItem("usuario",' + JSON.stringify(usuarioJson) + ');'
+      + 'window.location.replace("/");'
+      + '</script></body></html>');
+  } catch (err) {
+    console.error('Google callback error:', err);
+    res.redirect('/login.html?error=server_error');
+  }
+});
+
 // Middleware de autenticación
 function authMiddleware(req, res, next) {
-  // Verificar cookie o header
   const token = extraerToken(req);
-  if (token && sessions[token] && (Date.now() - sessions[token] < SESSION_DURATION)) {
-    sessions[token] = Date.now(); // renovar
+  const sesion = sessions[token];
+  if (sesion && (Date.now() - sesion.ts < SESSION_DURATION)) {
+    sesion.ts = Date.now(); // renovar
+    req.sesion = sesion;
     return next();
   }
-  // Si es API, responder 401
   if (req.path.startsWith('/api/')) {
     return res.status(401).json({ error: 'No autenticado', redirect: '/login' });
   }
-  // Si es página, redirigir al login
   return res.redirect('/login');
 }
 
 function extraerToken(req) {
-  // 1. Header Authorization: Bearer <token>
   const auth = req.headers.authorization;
   if (auth && auth.startsWith('Bearer ')) return auth.slice(7);
-  // 2. Cookie: token=xxx
   const cookies = req.headers.cookie || '';
   const match = cookies.match(/token=([a-f0-9]{64})/);
-  if (match) return match[1];
-  return null;
+  return match ? match[1] : null;
 }
 
 // Todo lo que no sea login requiere auth

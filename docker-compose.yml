@@ -10,6 +10,14 @@ services:
     environment:
       - APP_CLAVE=${APP_CLAVE:-nova2026}
       - NODE_ENV=production
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - GOOGLE_REDIRECT_URI=${GOOGLE_REDIRECT_URI:-http://192.168.0.18:3080/auth/google/callback}
+      - PGHOST=${PGHOST}
+      - PGPORT=${PGPORT:-5432}
+      - PGDATABASE=${PGDATABASE:-cdp_nova}
+      - PGUSER=${PGUSER}
+      - PGPASSWORD=${PGPASSWORD}
     volumes:
       - obleas-data:/app/data
     labels:
