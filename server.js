@@ -224,7 +224,8 @@ app.post('/api/procesar', upload.single('archivo'), (req, res) => {
         UMARCA: r.UMARCA, UMODELO: r.UMODELO, UANO: r.UANO,
         UCALLEYNRO: r.UCALLEYNRO, UCODPOSTAL: r.UCODPOSTAL,
         UTIPDOC: r.UTIPDOC, UNRODOC: r.UNRODOC, GNCOBS3: r.GNCOBS3,
-        UTELEFONO: r.UTELEFONO, UTELEFONO_ERROR: r.UTELEFONO_ERROR
+        UTELEFONO: r.UTELEFONO, UTELEFONO_ERROR: r.UTELEFONO_ERROR,
+        UOBLEANEW: r.UOBLEANEW, UOBLEAANT: r.UOBLEAANT
       }))
     });
   } catch (e) {
@@ -394,6 +395,34 @@ app.post('/api/config', (req, res) => {
     fs.writeFileSync(CONFIG_PATH, JSON.stringify(req.body, null, 2), 'utf8');
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ============================================================
+// PRE-CARGA EN WORKER
+// ============================================================
+
+app.post('/api/precarga', async (req, res) => {
+  try {
+    const { obleas } = req.body;
+    if (!Array.isArray(obleas) || obleas.length === 0) {
+      return res.status(400).json({ error: 'Falta lista de obleas' });
+    }
+    const cfg = fs.existsSync(CONFIG_PATH) ? JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8')) : {};
+    const apiUrl = cfg.apiUrl || 'https://consultas-gnc.arielxp.workers.dev';
+    const apiKey = cfg.apiKey || '';
+    const headers = { 'Content-Type': 'application/json' };
+    if (apiKey) headers['X-API-Key'] = apiKey;
+    const resp = await fetch(`${apiUrl}/api/consulta-oblea`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ obleas }),
+      signal: AbortSignal.timeout(300000)
+    });
+    const data = await resp.json();
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // Logout

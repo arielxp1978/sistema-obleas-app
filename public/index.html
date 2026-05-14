@@ -283,6 +283,22 @@ input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 2px rg
 <div class="tab-content" id="tc-verificacion">
   <div class="card">
     <h3>Verificación contra API ENARGAS</h3>
+
+    <!-- PRE-CARGA EN WORKER -->
+    <div id="precargaSection" class="mb-4" style="background:rgba(66,133,244,.08);border:1px solid rgba(66,133,244,.25);border-radius:var(--radius);padding:14px 16px;">
+      <div class="flex gap-3 items-center" style="flex-wrap:wrap;gap:10px;">
+        <div>
+          <div style="font-size:.85em;font-weight:600;color:var(--text);">Pre-cargar en Worker</div>
+          <div style="font-size:.77em;color:var(--text-sec);margin-top:2px;">Envía las patentes al worker antes de verificar. Evita el "reintentar en 90s".</div>
+        </div>
+        <button class="btn btn-primary" id="btnPrecarga" onclick="iniciarPrecarga()">📤 Pre-cargar (<span id="precargaCount">0</span> patentes)</button>
+        <span id="precargaStatus" style="font-size:.85em;color:var(--text-sec);"></span>
+      </div>
+      <div class="progress-bar" id="precargaProgress" style="display:none;margin-top:10px;">
+        <div class="fill" id="precargaProgressFill" style="width:0%"></div>
+      </div>
+    </div>
+
     <div class="flex gap-4 items-center mb-4">
       <div style="display:flex;flex-direction:column;gap:6px;">
         <div style="font-size:.8em;color:var(--text-sec);font-weight:600;">Tipo de consulta:</div>
@@ -513,6 +529,8 @@ async function procesarArchivo(file) {
 
     STATE.periodo = data.periodo;
     STATE.registros = data.registros;
+    const elPrecargaCount = document.getElementById('precargaCount');
+    if (elPrecargaCount) elPrecargaCount.textContent = STATE.registros.filter(r => r.UOBLEANEW).length;
     STATE.metricasOriginal = data.metricasOriginal;
     STATE.metricasFiltrado = data.metricasFiltrado;
     STATE.normalizacion = data.normalizacion;
@@ -866,6 +884,61 @@ async function descargarZip() {
     a.href = url; a.download = `obleas-${STATE.periodo || 'export'}.zip`;
     a.click(); URL.revokeObjectURL(url);
   } catch (e) { alert('Error: ' + e.message); }
+}
+
+// ============================================================
+// PRE-CARGA EN WORKER
+// ============================================================
+async function iniciarPrecarga() {
+  const obleas = STATE.registros.map(r => r.UOBLEANEW).filter(Boolean);
+  if (!obleas.length) { alert('Primero procesá un archivo (o el CSV no tiene campo UOBLEANEW).'); return; }
+
+  const btn = document.getElementById('btnPrecarga');
+  const status = document.getElementById('precargaStatus');
+  const progressBar = document.getElementById('precargaProgress');
+  const progressFill = document.getElementById('precargaProgressFill');
+
+  btn.disabled = true;
+  status.style.color = 'var(--text-sec)';
+  progressBar.style.display = 'block';
+  progressFill.style.width = '2%';
+
+  const BATCH = 50;
+  let procesadas = 0;
+  let errores = 0;
+
+  for (let i = 0; i < obleas.length; i += BATCH) {
+    const lote = obleas.slice(i, i + BATCH);
+    status.textContent = `Consultando obleas ${i + 1}–${Math.min(i + BATCH, obleas.length)} de ${obleas.length}...`;
+
+    const resp = await authFetch('/api/precarga', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ obleas: lote })
+    });
+
+    if (!resp) { errores += lote.length; }
+    else {
+      const data = await resp.json();
+      if (data.error) { errores += lote.length; }
+      else {
+        const resultados = Array.isArray(data) ? data : (data.resultados || []);
+        errores += resultados.filter(r => r.error !== '0' && r.error !== 0).length;
+        procesadas += resultados.filter(r => r.error === '0' || r.error === 0).length;
+      }
+    }
+
+    const pct = Math.round((i + lote.length) / obleas.length * 100);
+    progressFill.style.width = pct + '%';
+  }
+
+  progressFill.style.width = '100%';
+  const resumen = errores > 0
+    ? `✅ Pre-carga completa: ${procesadas} ok, ${errores} sin dato en ENARGAS. Ya podés verificar.`
+    : `✅ Pre-carga completa (${procesadas} obleas). Ya podés iniciar la verificación.`;
+  status.textContent = resumen;
+  status.style.color = 'var(--success)';
+  btn.disabled = false;
 }
 
 // ============================================================
