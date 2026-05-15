@@ -1006,6 +1006,8 @@ async function iniciarVerificacion() {
 
         if (st.results) {
           STATE.verificacion = st.results;
+          STATE.sinGuardar = true;
+          document.getElementById('btnGuardar').classList.remove('hidden');
           renderVerifResultados();
         }
       }
@@ -1582,21 +1584,9 @@ window.addEventListener('beforeunload', (e) => {
 // INIT
 // ============================================================
 cargarConfig();
-cargarPeriodosYAutoCargar();
-
-async function cargarPeriodosYAutoCargar() {
-  await cargarPeriodos();
-  // Si hay períodos guardados, auto-cargar el más reciente (el primero de la lista ya ordenada)
-  try {
-    const resp = await authFetch('/api/periodos');
-    if (!resp) return;
-    const periodos = await resp.json();
-    periodos.sort((a, b) => new Date(b.guardadoEn) - new Date(a.guardadoEn));
-    if (periodos.length > 0 && !STATE.periodo) {
-      await cargarPeriodo(periodos[0].periodoId);
-    }
-  } catch(e) { console.error(e); }
-}
+// Al abrir siempre mostrar la pantalla de archivos (sin auto-cargar período)
+switchTab('upload');
+cargarPeriodos();
 </script>
 </body>
 </html>
