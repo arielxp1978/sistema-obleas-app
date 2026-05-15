@@ -953,12 +953,12 @@ async function iniciarVerificacion() {
   const useForce = verifMode === 'force';
   const config = { ...STATE.config };
   if (useForce) {
-    if (!config.forceApiUrl) { alert('Configurá la URL API Force en Configuración.'); switchTab('config'); return; }
-    config.apiUrl = config.forceApiUrl;
-    config.apiKey = config.forceApiKey || config.apiKey;
-  } else {
-    if (!config.apiKey) { alert('Configurá la API Key en la pestaña Configuración.'); switchTab('config'); return; }
+    // Force usa el mismo apiUrl pero agrega &force=1 — no requiere URL separada
+    if (config.forceApiUrl) config.apiUrl = config.forceApiUrl;
+    if (config.forceApiKey) config.apiKey = config.forceApiKey;
+    config.force = true;
   }
+  if (!config.apiKey) { alert('Configurá la API Key en la pestaña Configuración.'); switchTab('config'); return; }
 
   const registros = STATE.registros.filter(r => r.UDOMINIO);
   document.getElementById('verifStatus').textContent = useForce ? '⚡ Modo Force activo' : '';
@@ -1153,9 +1153,10 @@ async function reintentarFallidos() {
   const verifMode = document.querySelector('input[name="verifMode"]:checked')?.value || 'normal';
   const useForce  = verifMode === 'force';
   const config    = { ...STATE.config };
-  if (useForce && config.forceApiUrl) {
-    config.apiUrl = config.forceApiUrl;
-    config.apiKey = config.forceApiKey || config.apiKey;
+  if (useForce) {
+    if (config.forceApiUrl) config.apiUrl = config.forceApiUrl;
+    if (config.forceApiKey) config.apiKey = config.forceApiKey;
+    config.force = true;
   }
 
   try {
