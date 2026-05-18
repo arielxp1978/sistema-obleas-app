@@ -284,34 +284,7 @@ input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 2px rg
   <div class="card">
     <h3>Verificación contra API ENARGAS</h3>
 
-    <!-- PRE-CARGA EN WORKER -->
-    <div id="precargaSection" class="mb-4" style="background:rgba(66,133,244,.08);border:1px solid rgba(66,133,244,.25);border-radius:var(--radius);padding:14px 16px;">
-      <div class="flex gap-3 items-center" style="flex-wrap:wrap;gap:10px;">
-        <div>
-          <div style="font-size:.85em;font-weight:600;color:var(--text);">Pre-cargar en Worker</div>
-          <div style="font-size:.77em;color:var(--text-sec);margin-top:2px;">Envía las patentes al worker antes de verificar. Evita el "reintentar en 90s".</div>
-        </div>
-        <button class="btn btn-primary" id="btnPrecarga" onclick="iniciarPrecarga()">📤 Pre-cargar (<span id="precargaCount">0</span> patentes)</button>
-        <span id="precargaStatus" style="font-size:.85em;color:var(--text-sec);"></span>
-      </div>
-      <div class="progress-bar" id="precargaProgress" style="display:none;margin-top:10px;">
-        <div class="fill" id="precargaProgressFill" style="width:0%"></div>
-      </div>
-    </div>
-
     <div class="flex gap-4 items-center mb-4">
-      <div style="display:flex;flex-direction:column;gap:6px;">
-        <div style="font-size:.8em;color:var(--text-sec);font-weight:600;">Tipo de consulta:</div>
-        <div style="display:flex;gap:8px;align-items:center;">
-          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.9em;">
-            <input type="radio" name="verifMode" value="normal" checked id="verifModeNormal"> Normal
-          </label>
-          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.9em;">
-            <input type="radio" name="verifMode" value="force" id="verifModeForce"> Force
-          </label>
-          <span style="font-size:.75em;color:var(--text-sec);">(Force ignora caché y reconsulta todo)</span>
-        </div>
-      </div>
       <button class="btn btn-primary" id="btnIniciarVerif" onclick="iniciarVerificacion()">▶ Iniciar Verificación</button>
       <button class="btn btn-warning hidden" id="btnPausarVerif" onclick="pausarVerificacion()">⏸ Pausar</button>
       <button class="btn hidden" id="btnCancelarVerif" onclick="cancelarVerificacion()" style="background:rgba(234,67,53,.2);border-color:rgba(234,67,53,.5);color:#ea4335;">✕ Cancelar</button>
@@ -376,16 +349,6 @@ input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 2px rg
     <div class="form-group">
       <label>Delay entre consultas (ms)</label>
       <input type="number" id="cfgDelay" value="500">
-    </div>
-    <hr style="margin:16px 0;border:none;border-top:1px solid var(--border);">
-    <h4 style="margin:0 0 12px;font-size:.95em;color:var(--text-sec);">Verificación Force (consulta forzada)</h4>
-    <div class="form-group">
-      <label>URL API Force</label>
-      <input type="text" id="cfgForceUrl" placeholder="URL alternativa para consulta Force">
-    </div>
-    <div class="form-group">
-      <label>API Key Force</label>
-      <input type="password" id="cfgForceKey" placeholder="API Key para consulta Force">
     </div>
     <hr style="margin:16px 0;border:none;border-top:1px solid var(--border);">
     <div class="form-group">
@@ -529,8 +492,6 @@ async function procesarArchivo(file) {
 
     STATE.periodo = data.periodo;
     STATE.registros = data.registros;
-    const elPrecargaCount = document.getElementById('precargaCount');
-    if (elPrecargaCount) elPrecargaCount.textContent = STATE.registros.filter(r => r.UOBLEANEW).length;
     STATE.metricasOriginal = data.metricasOriginal;
     STATE.metricasFiltrado = data.metricasFiltrado;
     STATE.normalizacion = data.normalizacion;
@@ -949,24 +910,15 @@ let verifInterval = null;
 async function iniciarVerificacion() {
   if (!STATE.registros.length) { alert('Primero procesá un archivo.'); return; }
 
-  const verifMode = document.querySelector('input[name="verifMode"]:checked')?.value || 'normal';
-  const useForce = verifMode === 'force';
   const config = { ...STATE.config };
-  if (useForce) {
-    // Force usa el mismo apiUrl pero agrega &force=1 — no requiere URL separada
-    if (config.forceApiUrl) config.apiUrl = config.forceApiUrl;
-    if (config.forceApiKey) config.apiKey = config.forceApiKey;
-    config.force = true;
-  }
   if (!config.apiKey) { alert('Configurá la API Key en la pestaña Configuración.'); switchTab('config'); return; }
 
   const registros = STATE.registros.filter(r => r.UDOMINIO);
-  document.getElementById('verifStatus').textContent = useForce ? '⚡ Modo Force activo' : '';
 
   try {
     const resp = await authFetch('/api/verificar/iniciar', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ registros, config, force: useForce })
+      body: JSON.stringify({ registros, config })
     });
     const data = await resp.json();
     if (!data.ok) { alert(data.error); return; }
@@ -1134,7 +1086,7 @@ async function reintentarFallidos() {
   );
   if (!fallidos.length) return;
 
-  const confirmMsg = `¿Reintentar ${fallidos.length} consultas con error técnico o procesando?\n\nSe usará el mismo tipo de consulta (Normal/Force) que al inicio.`;
+  const confirmMsg = `¿Reintentar ${fallidos.length} consultas con error técnico o procesando?`;
   if (!confirm(confirmMsg)) return;
 
   // Extraer los registros originales de los fallidos
@@ -1149,20 +1101,12 @@ async function reintentarFallidos() {
   document.getElementById('btnReintentarFallidos').classList.add('hidden');
   document.getElementById('verifStatus').textContent = `🔄 Reintentando ${registrosAReeintentar.length} consultas...`;
 
-  // Iniciar verificación solo con los fallidos
-  const verifMode = document.querySelector('input[name="verifMode"]:checked')?.value || 'normal';
-  const useForce  = verifMode === 'force';
-  const config    = { ...STATE.config };
-  if (useForce) {
-    if (config.forceApiUrl) config.apiUrl = config.forceApiUrl;
-    if (config.forceApiKey) config.apiKey = config.forceApiKey;
-    config.force = true;
-  }
+  const config = { ...STATE.config };
 
   try {
     const resp = await authFetch('/api/verificar/iniciar', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ registros: registrosAReeintentar, config, force: useForce })
+      body: JSON.stringify({ registros: registrosAReeintentar, config })
     });
     const data = await resp.json();
     if (!data.ok) { alert('Error: ' + data.error); return; }
@@ -1235,8 +1179,6 @@ async function cargarConfig() {
     document.getElementById('cfgDelay').value = STATE.config.delay || 500;
     document.getElementById('cfgPec').value = (STATE.config.pecPropios || []).join(', ');
     document.getElementById('cfgTaller').value = (STATE.config.talleresPropios || []).join(', ');
-    document.getElementById('cfgForceUrl').value = STATE.config.forceApiUrl || '';
-    document.getElementById('cfgForceKey').value = STATE.config.forceApiKey || '';
     actualizarHeaderConfig();
   } catch (e) { console.error('Error cargando config:', e); }
 }
@@ -1293,9 +1235,7 @@ async function guardarConfig() {
     apiKey: document.getElementById('cfgApiKey').value.trim(),
     delay: parseInt(document.getElementById('cfgDelay').value) || 500,
     pecPropios: document.getElementById('cfgPec').value.split(',').map(s => s.trim()).filter(Boolean),
-    talleresPropios: document.getElementById('cfgTaller').value.split(',').map(s => s.trim()).filter(Boolean),
-    forceApiUrl: document.getElementById('cfgForceUrl').value.trim(),
-    forceApiKey: document.getElementById('cfgForceKey').value.trim()
+    talleresPropios: document.getElementById('cfgTaller').value.split(',').map(s => s.trim()).filter(Boolean)
   };
   try {
     await authFetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(STATE.config) });

@@ -30,6 +30,70 @@ const pool = new Pool({
   connectionTimeoutMillis: 5000,
 });
 
+// Pool PostgreSQL enargas_data (para enriquecer UOBLEANEW al importar)
+const poolEnargas = new Pool({
+  host: process.env.PGHOST,
+  port: parseInt(process.env.PGPORT || '5432'),
+  database: 'enargas_data',
+  user: process.env.PGUSER,
+  password: process.env.PGPASSWORD,
+  ssl: process.env.PGSSL === 'true' ? { rejectUnauthorized: false } : false,
+  connectionTimeoutMillis: 5000,
+});
+
+// Enriquece UOBLEANEW desde historial_obleas_datos para registros que no lo tienen en el CSV
+async function enriquecerObleas(normalizados) {
+  // Determinar rango de vencimiento según UFECVENHAB del período
+  // UFECVENHAB viene como "1/4/2026" (d/m/yyyy)
+  const sinOblea = normalizados.filter(r => !r.UOBLEANEW);
+  if (sinOblea.length === 0) return normalizados; // todos ya tienen oblea del CSV
+
+  // Detectar el mes/año del período desde el primer registro con fecha
+  let periodoStart = null, periodoEnd = null;
+  const conFecha = normalizados.find(r => r.UFECVENHAB);
+  if (conFecha) {
+    const parts = conFecha.UFECVENHAB.split('/');
+    if (parts.length === 3) {
+      const mes = parseInt(parts[1]), anio = parseInt(parts[2]);
+      // Rango: desde 15 días antes del mes hasta el último día del mes
+      periodoStart = new Date(anio, mes - 1, 1); // 1ro del mes
+      periodoStart.setDate(periodoStart.getDate() - 15); // 15 días antes
+      periodoEnd = new Date(anio, mes, 1); // 1ro del mes siguiente
+    }
+  }
+  if (!periodoStart) return normalizados; // no se pudo determinar el período
+
+  const patentes = sinOblea.map(r => r.UDOMINIO).filter(Boolean);
+  if (patentes.length === 0) return normalizados;
+
+  try {
+    const placeholders = patentes.map((_, i) => `$${i + 3}`).join(',');
+    const query = `
+      SELECT DISTINCT ON (patente) patente, numero_oblea
+      FROM historial_obleas_datos
+      WHERE vencimiento_oblea >= $1 AND vencimiento_oblea < $2
+        AND patente IN (${placeholders})
+      ORDER BY patente, vencimiento_oblea ASC
+    `;
+    const result = await poolEnargas.query(query, [periodoStart, periodoEnd, ...patentes]);
+    const obleasMap = {};
+    result.rows.forEach(r => { obleasMap[r.patente] = String(r.numero_oblea); });
+
+    let enriquecidos = 0;
+    normalizados.forEach(r => {
+      if (!r.UOBLEANEW && obleasMap[r.UDOMINIO]) {
+        r.UOBLEANEW = obleasMap[r.UDOMINIO];
+        enriquecidos++;
+      }
+    });
+    console.log(`[enriquecerObleas] ${enriquecidos}/${sinOblea.length} registros enriquecidos con UOBLEANEW desde enargas_data`);
+  } catch (e) {
+    console.error('[enriquecerObleas] Error consultando enargas_data (no bloqueante):', e.message);
+    // No bloqueante: si falla, continúa sin el enriquecimiento
+  }
+  return normalizados;
+}
+
 // Sesiones en memoria: token → { ts, nombre, email, metodo }
 const sessions = {};
 const SESSION_DURATION = 24 * 60 * 60 * 1000; // 24 horas
@@ -94,6 +158,7 @@ app.get('/auth/google', (req, res) => {
 app.get('/auth/google/callback', async (req, res) => {
   try {
     const { code, error } = req.query;
+    console.log('[OAuth callback] code:', code ? 'PRESENTE' : 'AUSENTE', '| error:', error || 'ninguno');
     if (error || !code) return res.redirect('/login.html?error=google_denied');
 
     // Intercambiar code por access_token
@@ -109,6 +174,7 @@ app.get('/auth/google/callback', async (req, res) => {
       })
     });
     const tokens = await tokenRes.json();
+    console.log('[OAuth callback] token exchange:', tokens.access_token ? 'OK' : 'FALLÓ', tokens.error || '');
     if (!tokens.access_token) {
       console.error('Google token error:', tokens);
       return res.redirect('/login.html?error=token_failed');
@@ -151,9 +217,10 @@ app.get('/auth/google/callback', async (req, res) => {
     }
 
     const token = crearSesion(nombre, googleUser.email, 'google');
+    console.log('[OAuth callback] sesión creada para:', googleUser.email, '| token:', token.slice(0,8) + '...');
     const usuarioJson = JSON.stringify({ nombre, email: googleUser.email, metodo: 'google' });
 
-    res.setHeader('Set-Cookie', 'token=' + token + '; Path=/; Max-Age=86400; SameSite=Strict');
+    res.setHeader('Set-Cookie', 'token=' + token + '; Path=/; Max-Age=86400; SameSite=Lax');
     res.send('<!DOCTYPE html><html><body><script>'
       + 'localStorage.setItem("token","' + token + '");'
       + 'localStorage.setItem("usuario",' + JSON.stringify(usuarioJson) + ');'
@@ -169,6 +236,7 @@ app.get('/auth/google/callback', async (req, res) => {
 function authMiddleware(req, res, next) {
   const token = extraerToken(req);
   const sesion = sessions[token];
+  console.log('[auth] path:', req.path, '| token:', token ? token.slice(0,8)+'...' : 'NINGUNO', '| sesion:', sesion ? 'OK' : 'NO ENCONTRADA', '| sessions activas:', Object.keys(sessions).length);
   if (sesion && (Date.now() - sesion.ts < SESSION_DURATION)) {
     sesion.ts = Date.now(); // renovar
     req.sesion = sesion;
@@ -199,11 +267,15 @@ app.use(express.static(path.join(__dirname, 'public')));
 // ============================================================
 
 // Subir y procesar CSV
-app.post('/api/procesar', upload.single('archivo'), (req, res) => {
+app.post('/api/procesar', upload.single('archivo'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'No se envió archivo' });
     const text = req.file.buffer.toString('utf8');
     const resultado = procesarCompleto(text);
+
+    // Enriquecer UOBLEANEW desde enargas_data para registros que no lo traen en el CSV
+    await enriquecerObleas(resultado.normalizados);
+
     res.json({
       ok: true,
       periodo: resultado.periodo,
