@@ -925,18 +925,26 @@ async function iniciarVerificacion() {
     });
     let data = await resp.json();
 
-    if (!resp.ok) {
-      const msg = data.error || '';
-      if (msg.toLowerCase().includes('ya existe') || resp.status === 409) {
+    // Detectar job duplicado: puede llegar como 4xx o como 200 con data.error
+    const esDuplicado = !resp.ok || data.error;
+    if (esDuplicado) {
+      const msg = String(data.error || '');
+      const esConflicto = msg.toLowerCase().includes('ya existe') || resp.status === 409 || resp.status === 400;
+      if (esConflicto) {
         if (!confirm(`Ya existe un job para "${nombre}".\n¿Forzar nuevo análisis? (descarta el anterior)`)) return;
         resp = await authFetch('/api/lote', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ nombre, patentes, force: true })
         });
         data = await resp.json();
+        if (!resp.ok || data.error) { alert('Error: ' + (data.error || 'Error al crear job')); return; }
+      } else {
+        alert('Error: ' + (data.error || 'Error al crear job'));
+        return;
       }
-      if (!resp.ok) { alert('Error: ' + (data.error || 'Error al crear job')); return; }
     }
+
+    if (!data.job_id) { alert('La API no devolvió job_id — verificá la conexión con dalegas.com.ar'); return; }
 
     const jobId = data.job_id;
     const regMap = {};
@@ -1019,7 +1027,7 @@ async function pollLote(jobId, totalExpected) {
       clasificacion: clasificarItemLote(item, STATE.config)
     }));
 
-    const completado = st.status === 'completado' || resueltos >= total;
+    const completado = st.status === 'completado';
     if (completado) {
       clearInterval(verifInterval);
       document.getElementById('btnIniciarVerif').disabled = false;
