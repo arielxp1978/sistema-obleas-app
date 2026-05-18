@@ -15,6 +15,8 @@ const PORT = process.env.PORT || 3000;
 
 const APP_CLAVE = process.env.APP_CLAVE || 'nova2026';
 const COMUNICACIONES_HUB_URL = process.env.COMUNICACIONES_HUB_URL || 'https://n8n.srv803796.hstgr.cloud/webhook/comunicaciones';
+const DALEGAS_API_URL = process.env.DALEGAS_API_URL || 'https://api.dalegas.com.ar';
+const DALEGAS_API_KEY = process.env.DALEGAS_API_KEY || 'AppNovaSecret2026';
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 const GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI || 'http://192.168.0.18:3080/auth/google/callback';
@@ -324,10 +326,7 @@ app.post('/api/generar-archivos', (req, res) => {
 // ============================================================
 let verifState = { running: false, paused: false, progress: 0, total: 0, results: [], log: [], _pendingRegistros: [], _pendingConfig: null };
 
-async function notificarLoteCompletado(periodoNombre, results) {
-  const total = results.length;
-  const errores = results.filter(r => r.clasificacion.codigo === 'PENDIENTE').length;
-  const ok = total - errores;
+async function notificarLoteCompletado(periodoNombre, total, ok, errores) {
   const nombre = periodoNombre || 'Lote';
   const mensaje = `✅ Lote "${nombre}" completado\n• Total: ${total} patentes\n• OK: ${ok}\n• Errores: ${errores}`;
   try {
@@ -375,7 +374,9 @@ async function ejecutarVerificacion(registros, config, startFrom = 0) {
     verifState.progress = i + 1;
     if (i < registros.length - 1) await new Promise(r => setTimeout(r, delay));
   }
-  await notificarLoteCompletado(config.periodoNombre, verifState.results);
+  const _total = verifState.results.length;
+  const _errores = verifState.results.filter(r => r.clasificacion.codigo === 'PENDIENTE').length;
+  await notificarLoteCompletado(config.periodoNombre, _total, _total - _errores, _errores);
   verifState.running = false;
   verifState._pendingRegistros = [];
   verifState._pendingConfig = null;
@@ -429,6 +430,44 @@ app.get('/api/verificar/estado', (req, res) => {
     logOffset: verifState.log.length,
     results: !verifState.running ? verifState.results : undefined
   });
+});
+
+// ============================================================
+// LOTE — proxy → api.dalegas.com.ar
+// ============================================================
+
+app.post('/api/lote', async (req, res) => {
+  try {
+    const resp = await fetch(`${DALEGAS_API_URL}/api/lote`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-API-Key': DALEGAS_API_KEY },
+      body: JSON.stringify(req.body),
+      signal: AbortSignal.timeout(30000)
+    });
+    const data = await resp.json();
+    res.status(resp.status).json(data);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/api/lote/:jobId', async (req, res) => {
+  try {
+    const resp = await fetch(`${DALEGAS_API_URL}/api/lote/${req.params.jobId}`, {
+      headers: { 'X-API-Key': DALEGAS_API_KEY },
+      signal: AbortSignal.timeout(30000)
+    });
+    const data = await resp.json();
+    res.status(resp.status).json(data);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/notificar-lote', async (req, res) => {
+  const { periodoNombre, total, ok, errores } = req.body;
+  await notificarLoteCompletado(periodoNombre, total, ok, errores);
+  res.json({ ok: true });
 });
 
 // ============================================================

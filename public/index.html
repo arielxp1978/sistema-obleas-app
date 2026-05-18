@@ -910,94 +910,148 @@ let verifInterval = null;
 async function iniciarVerificacion() {
   if (!STATE.registros.length) { alert('Primero procesá un archivo.'); return; }
 
-  const config = { ...STATE.config, periodoNombre: periodoNombreLegible(STATE.periodo) };
-  if (!config.apiKey) { alert('Configurá la API Key en la pestaña Configuración.'); switchTab('config'); return; }
-
   const registros = STATE.registros.filter(r => r.UDOMINIO);
+  const nombre = periodoNombreLegible(STATE.periodo);
+  const patentes = registros.map(r => {
+    const item = { patente: r.UDOMINIO };
+    if (r.UOBLEANEW) item.oblea = parseInt(r.UOBLEANEW);
+    return item;
+  });
 
   try {
-    const resp = await authFetch('/api/verificar/iniciar', {
+    let resp = await authFetch('/api/lote', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ registros, config })
+      body: JSON.stringify({ nombre, patentes, force: false })
     });
-    const data = await resp.json();
-    if (!data.ok) { alert(data.error); return; }
+    let data = await resp.json();
+
+    if (!resp.ok) {
+      const msg = data.error || '';
+      if (msg.toLowerCase().includes('ya existe') || resp.status === 409) {
+        if (!confirm(`Ya existe un job para "${nombre}".\n¿Forzar nuevo análisis? (descarta el anterior)`)) return;
+        resp = await authFetch('/api/lote', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ nombre, patentes, force: true })
+        });
+        data = await resp.json();
+      }
+      if (!resp.ok) { alert('Error: ' + (data.error || 'Error al crear job')); return; }
+    }
+
+    const jobId = data.job_id;
+    const regMap = {};
+    registros.forEach(r => { regMap[r.UDOMINIO] = r; });
+    STATE._verifJobId = jobId;
+    STATE._verifRegMap = regMap;
+    STATE._verifCancelled = false;
 
     document.getElementById('btnIniciarVerif').disabled = true;
-    document.getElementById('btnPausarVerif').classList.remove('hidden');
+    document.getElementById('btnPausarVerif').classList.add('hidden');
     document.getElementById('btnCancelarVerif').classList.remove('hidden');
     document.getElementById('verifProgress').style.display = 'block';
     document.getElementById('verifLog').style.display = 'block';
     document.getElementById('verifLog').innerHTML = '';
 
-    let lastLog = 0;
-    verifInterval = setInterval(async () => {
-      const sr = await authFetch(`/api/verificar/estado?lastLog=${lastLog}`);
-      const st = await sr.json();
+    agregarLogVerif('ok', `Job creado: ${jobId} | Total: ${data.total} | cache: ${data.desde_cache} | S14: ${data.encoladas}`);
+    document.getElementById('verifProgressFill').style.width = '0%';
+    document.getElementById('verifStatus').textContent = `0/${data.total} (0%)`;
 
-      const pct = st.total ? Math.round(st.progress / st.total * 100) : 0;
-      document.getElementById('verifProgressFill').style.width = pct + '%';
-      document.getElementById('verifStatus').textContent = `${st.progress}/${st.total} (${pct}%)`;
-
-      const logBox = document.getElementById('verifLog');
-      st.log.forEach(l => {
-        const cls = l.tipo === 'ok' ? 'log-ok' : l.tipo === 'err' ? 'log-err' : 'log-warn';
-        logBox.innerHTML += `<div class="${cls}">${l.msg}</div>`;
-      });
-      logBox.scrollTop = logBox.scrollHeight;
-      lastLog = st.logOffset;
-
-      if (!st.running) {
-        clearInterval(verifInterval);
-        document.getElementById('btnIniciarVerif').disabled = false;
-        const btnP = document.getElementById('btnPausarVerif');
-        btnP.classList.add('hidden');
-        btnP.textContent = '⏸ Pausar';
-        btnP.className = 'btn btn-warning hidden';
-        document.getElementById('btnCancelarVerif').classList.add('hidden');
-
-        if (st.results) {
-          STATE.verificacion = st.results;
-          STATE.sinGuardar = true;
-          document.getElementById('btnGuardar').classList.remove('hidden');
-          renderVerifResultados();
-        }
-      }
-    }, 1000);
+    verifInterval = setInterval(() => pollLote(jobId, data.total), 12000);
 
   } catch (e) { alert('Error: ' + e.message); }
 }
 
-async function cancelarVerificacion() {
-  if (!confirm('¿Cancelar la verificación en curso? Perderás el progreso actual.')) return;
-  await authFetch('/api/verificar/cancelar', { method: 'POST' });
-  clearInterval(verifInterval);
-  document.getElementById('btnIniciarVerif').disabled = false;
-  document.getElementById('btnPausarVerif').classList.add('hidden');
-  document.getElementById('btnCancelarVerif').classList.add('hidden');
-  const btnP = document.getElementById('btnPausarVerif');
-  btnP.textContent = '⏸ Pausar';
-  btnP.className = 'btn btn-warning hidden';
-  document.getElementById('verifStatus').textContent = '✕ Cancelado';
+function agregarLogVerif(tipo, msg) {
+  const logBox = document.getElementById('verifLog');
+  if (!logBox) return;
+  const cls = tipo === 'ok' ? 'log-ok' : tipo === 'err' ? 'log-err' : 'log-warn';
+  const div = document.createElement('div');
+  div.className = cls;
+  div.textContent = msg;
+  logBox.appendChild(div);
+  logBox.scrollTop = logBox.scrollHeight;
 }
 
-async function pausarVerificacion() {
-  const btn = document.getElementById('btnPausarVerif');
-  const esPausando = btn.textContent.includes('Pausar');
-  if (esPausando) {
-    await authFetch('/api/verificar/pausar', { method: 'POST' });
-    btn.textContent = '▶ Reanudar';
-    btn.className = 'btn btn-success';
-    btn.setAttribute('onclick', 'pausarVerificacion()');
-    document.getElementById('verifStatus').textContent = '⏸ Pausado';
-  } else {
-    const resp = await authFetch('/api/verificar/reanudar', { method: 'POST' });
-    const data = await resp.json();
-    if (!data.ok) { alert(data.error); return; }
-    btn.textContent = '⏸ Pausar';
-    btn.className = 'btn btn-warning';
-    document.getElementById('verifStatus').textContent = '';
+function clasificarItemLote(item, config) {
+  const base = { pecNombre: '-', tallerNombre: '-', tallerCodigo: '-', pecCodigo: '-', fechaOp: '-', nuevoVto: '-' };
+  if (item.status === 'pendiente') return { codigo: 'PENDIENTE', texto: 'Verificando...', ...base };
+  if (item.status === 'error') return { codigo: 'ERROR_TECNICO', texto: 'Error: ' + (item.error || 'desconocido'), ...base };
+  const r = item.resultado;
+  if (!r) return { codigo: 'NO_RENOVO', texto: 'No Renovó', ...base };
+  if (String(r.error) === '2' || r.estado === 'not_found') return { codigo: 'NO_RENOVO', texto: 'No Renovó', ...base };
+  if (String(r.error) === '4') return { codigo: 'PROCESANDO', texto: 'Procesando...', ...base };
+  if (String(r.error) === '8') return { codigo: 'BAJA_GNC', texto: 'Dado de baja / Desmontaje', ...base };
+  if (String(r.error) !== '0') return { codigo: 'NO_RENOVO', texto: 'No Renovó', ...base };
+  const datos = r.datos || {};
+  const pec = String(datos.pec_codigo || '');
+  const taller = String(datos.taller_codigo || '');
+  const enriquecido = {
+    pecCodigo: pec, pecNombre: datos.pec_nombre || datos.razon_social_pec || pec || '-',
+    tallerCodigo: taller, tallerNombre: datos.taller_nombre || datos.razon_social_taller || taller || '-',
+    fechaOp: datos.habilitacion ? datos.habilitacion.split('T')[0] : '-',
+    nuevoVto: datos.vencimiento ? datos.vencimiento.split('T')[0] : '-'
+  };
+  const pecPropios = config.pecPropios || ['3145', '3286'];
+  const talleresPropios = config.talleresPropios || ['IRT0550', 'HIT0797', 'QUT0856'];
+  if (pecPropios.includes(pec) && talleresPropios.includes(taller))
+    return { codigo: 'NUESTRO_PEC_NUESTRO_TALLER', texto: 'Nuestro PEC + Nuestro Taller', ...enriquecido };
+  if (pecPropios.includes(pec))
+    return { codigo: 'NUESTRO_PEC_OTRO_TALLER', texto: 'Nuestro PEC + Taller Externo', ...enriquecido };
+  return { codigo: 'OTRO_PEC', texto: 'Otro PEC', ...enriquecido };
+}
+
+async function pollLote(jobId, totalExpected) {
+  if (STATE._verifCancelled) { clearInterval(verifInterval); return; }
+  try {
+    const resp = await authFetch(`/api/lote/${jobId}`);
+    const st = await resp.json();
+    const resultados = st.resultados || [];
+    const resueltos = resultados.filter(r => r.status !== 'pendiente').length;
+    const total = totalExpected || resultados.length;
+    const pct = total ? Math.round(resueltos / total * 100) : 0;
+
+    document.getElementById('verifProgressFill').style.width = pct + '%';
+    document.getElementById('verifStatus').textContent = `${resueltos}/${total} (${pct}%)`;
+
+    const regMap = STATE._verifRegMap || {};
+    STATE.verificacion = resultados.map(item => ({
+      registro: regMap[item.patente] || { UDOMINIO: item.patente, UAPEYNOM: '-' },
+      clasificacion: clasificarItemLote(item, STATE.config)
+    }));
+
+    const completado = st.status === 'completado' || resueltos >= total;
+    if (completado) {
+      clearInterval(verifInterval);
+      document.getElementById('btnIniciarVerif').disabled = false;
+      document.getElementById('btnCancelarVerif').classList.add('hidden');
+      const ok = STATE.verificacion.filter(r => !['PENDIENTE','ERROR_TECNICO'].includes(r.clasificacion.codigo)).length;
+      const errores = STATE.verificacion.filter(r => r.clasificacion.codigo === 'ERROR_TECNICO').length;
+      document.getElementById('verifStatus').textContent = '✅ Verificación completa';
+      agregarLogVerif('ok', `Completado: ${total} patentes | OK: ${ok} | Errores: ${errores}`);
+      authFetch('/api/notificar-lote', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ periodoNombre: periodoNombreLegible(STATE.periodo), total, ok, errores })
+      }).catch(() => {});
+      STATE.sinGuardar = true;
+      document.getElementById('btnGuardar').classList.remove('hidden');
+    } else {
+      const cache = resultados.filter(r => r.fuente === 'cache').length;
+      const s14 = resultados.filter(r => r.fuente === 's14').length;
+      agregarLogVerif('warn', `${resueltos}/${total} resueltos | cache: ${cache} | S14: ${s14} | pendientes: ${total - resueltos}`);
+    }
+    renderVerifResultados();
+  } catch (e) {
+    agregarLogVerif('err', 'Error al consultar estado: ' + e.message);
   }
+}
+
+function cancelarVerificacion() {
+  if (!confirm('¿Cancelar el polling? El job en S14 sigue corriendo, podés retomar más tarde.')) return;
+  STATE._verifCancelled = true;
+  clearInterval(verifInterval);
+  document.getElementById('btnIniciarVerif').disabled = false;
+  document.getElementById('btnCancelarVerif').classList.add('hidden');
+  document.getElementById('verifStatus').textContent = '✕ Polling cancelado';
 }
 
 function renderVerifResultados() {
@@ -1085,69 +1139,65 @@ async function reintentarFallidos() {
     r.clasificacion.codigo === 'ERROR_TECNICO' || r.clasificacion.codigo === 'PROCESANDO'
   );
   if (!fallidos.length) return;
+  if (!confirm(`¿Reintentar ${fallidos.length} consultas con error?`)) return;
 
-  const confirmMsg = `¿Reintentar ${fallidos.length} consultas con error técnico o procesando?`;
-  if (!confirm(confirmMsg)) return;
+  const nombre = 'Reintento - ' + periodoNombreLegible(STATE.periodo);
+  const patentes = fallidos.map(r => {
+    const item = { patente: r.registro.UDOMINIO };
+    if (r.registro.UOBLEANEW) item.oblea = parseInt(r.registro.UOBLEANEW);
+    return item;
+  });
 
-  // Extraer los registros originales de los fallidos
-  const registrosAReeintentar = fallidos.map(r => r.registro);
-
-  // Remover los fallidos del resultado actual para reemplazarlos
   STATE.verificacion = STATE.verificacion.filter(r =>
     r.clasificacion.codigo !== 'ERROR_TECNICO' && r.clasificacion.codigo !== 'PROCESANDO'
   );
-
-  // Ocultar el botón mientras corre
   document.getElementById('btnReintentarFallidos').classList.add('hidden');
-  document.getElementById('verifStatus').textContent = `🔄 Reintentando ${registrosAReeintentar.length} consultas...`;
-
-  const config = { ...STATE.config, periodoNombre: 'Reintento - ' + periodoNombreLegible(STATE.periodo) };
+  document.getElementById('verifStatus').textContent = `🔄 Enviando reintento de ${fallidos.length} patentes...`;
 
   try {
-    const resp = await authFetch('/api/verificar/iniciar', {
+    let resp = await authFetch('/api/lote', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ registros: registrosAReeintentar, config })
+      body: JSON.stringify({ nombre, patentes, force: true })
     });
-    const data = await resp.json();
-    if (!data.ok) { alert('Error: ' + data.error); return; }
+    let data = await resp.json();
+    if (!resp.ok) { alert('Error: ' + (data.error || 'Error al crear job')); return; }
+
+    const jobId = data.job_id;
+    const regMap = STATE._verifRegMap || {};
+    STATE._verifJobId = jobId;
+    STATE._verifCancelled = false;
 
     document.getElementById('btnIniciarVerif').disabled = true;
-    document.getElementById('btnPausarVerif').classList.remove('hidden');
     document.getElementById('btnCancelarVerif').classList.remove('hidden');
-    document.getElementById('verifProgress').style.display = 'block';
-    document.getElementById('verifLog').style.display = 'block';
+    agregarLogVerif('ok', `Reintento job: ${jobId} | ${data.total} patentes`);
 
-    let lastLog = 0;
     verifInterval = setInterval(async () => {
-      const sr = await authFetch(`/api/verificar/estado?lastLog=${lastLog}`);
-      const st = await sr.json();
-      const pct = st.total ? Math.round(st.progress / st.total * 100) : 0;
-      document.getElementById('verifProgressFill').style.width = pct + '%';
-      const logBox = document.getElementById('verifLog');
-      st.log.forEach(l => {
-        const div = document.createElement('div');
-        div.className = l.tipo === 'ok' ? 'log-ok' : l.tipo === 'err' ? 'log-err' : 'log-warn';
-        div.textContent = l.msg;
-        logBox.appendChild(div);
-      });
-      logBox.scrollTop = logBox.scrollHeight;
-      lastLog = st.logOffset;
+      if (STATE._verifCancelled) { clearInterval(verifInterval); return; }
+      try {
+        const sr = await authFetch(`/api/lote/${jobId}`);
+        const st = await sr.json();
+        const resultados = st.resultados || [];
+        const resueltos = resultados.filter(r => r.status !== 'pendiente').length;
+        const total = data.total || resultados.length;
+        const pct = total ? Math.round(resueltos / total * 100) : 0;
+        document.getElementById('verifProgressFill').style.width = pct + '%';
+        document.getElementById('verifStatus').textContent = `Reintento: ${resueltos}/${total} (${pct}%)`;
 
-      if (!st.running) {
-        clearInterval(verifInterval);
-        document.getElementById('btnIniciarVerif').disabled = false;
-        const btnP = document.getElementById('btnPausarVerif');
-        btnP.classList.add('hidden'); btnP.textContent = '⏸ Pausar'; btnP.className = 'btn btn-warning hidden';
-        document.getElementById('btnCancelarVerif').classList.add('hidden');
+        const nuevos = resultados.map(item => ({
+          registro: regMap[item.patente] || { UDOMINIO: item.patente, UAPEYNOM: '-' },
+          clasificacion: clasificarItemLote(item, STATE.config)
+        }));
+        STATE.verificacion = [...STATE.verificacion, ...nuevos];
 
-        if (st.results) {
-          // Fusionar resultados del reintento con los anteriores
-          STATE.verificacion = [...STATE.verificacion, ...st.results];
+        if (st.status === 'completado' || resueltos >= total) {
+          clearInterval(verifInterval);
+          document.getElementById('btnIniciarVerif').disabled = false;
+          document.getElementById('btnCancelarVerif').classList.add('hidden');
           document.getElementById('verifStatus').textContent = '✅ Reintento completo';
-          renderVerifResultados();
         }
-      }
-    }, 1000);
+        renderVerifResultados();
+      } catch (e) { agregarLogVerif('err', 'Error polling reintento: ' + e.message); }
+    }, 12000);
   } catch (e) { alert('Error: ' + e.message); }
 }
 
