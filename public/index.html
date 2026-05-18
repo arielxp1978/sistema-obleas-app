@@ -910,7 +910,7 @@ let verifInterval = null;
 async function iniciarVerificacion() {
   if (!STATE.registros.length) { alert('Primero procesá un archivo.'); return; }
 
-  const config = { ...STATE.config };
+  const config = { ...STATE.config, periodoNombre: periodoNombreLegible(STATE.periodo) };
   if (!config.apiKey) { alert('Configurá la API Key en la pestaña Configuración.'); switchTab('config'); return; }
 
   const registros = STATE.registros.filter(r => r.UDOMINIO);
@@ -1101,7 +1101,7 @@ async function reintentarFallidos() {
   document.getElementById('btnReintentarFallidos').classList.add('hidden');
   document.getElementById('verifStatus').textContent = `🔄 Reintentando ${registrosAReeintentar.length} consultas...`;
 
-  const config = { ...STATE.config };
+  const config = { ...STATE.config, periodoNombre: 'Reintento - ' + periodoNombreLegible(STATE.periodo) };
 
   try {
     const resp = await authFetch('/api/verificar/iniciar', {

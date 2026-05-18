@@ -14,6 +14,7 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 
 const PORT = process.env.PORT || 3000;
 
 const APP_CLAVE = process.env.APP_CLAVE || 'nova2026';
+const COMUNICACIONES_HUB_URL = process.env.COMUNICACIONES_HUB_URL || 'https://n8n.srv803796.hstgr.cloud/webhook/comunicaciones';
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 const GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI || 'http://192.168.0.18:3080/auth/google/callback';
@@ -323,6 +324,25 @@ app.post('/api/generar-archivos', (req, res) => {
 // ============================================================
 let verifState = { running: false, paused: false, progress: 0, total: 0, results: [], log: [], _pendingRegistros: [], _pendingConfig: null };
 
+async function notificarLoteCompletado(periodoNombre, results) {
+  const total = results.length;
+  const errores = results.filter(r => r.clasificacion.codigo === 'PENDIENTE').length;
+  const ok = total - errores;
+  const nombre = periodoNombre || 'Lote';
+  const mensaje = `✅ Lote "${nombre}" completado\n• Total: ${total} patentes\n• OK: ${ok}\n• Errores: ${errores}`;
+  try {
+    await fetch(COMUNICACIONES_HUB_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tipo: 'nova-tecnico', mensaje }),
+      signal: AbortSignal.timeout(10000)
+    });
+    console.log('[notificarLote] Notificación enviada al hub de comunicaciones');
+  } catch (e) {
+    console.error('[notificarLote] Error enviando notificación (no bloqueante):', e.message);
+  }
+}
+
 async function ejecutarVerificacion(registros, config, startFrom = 0) {
   const delay = config.delay || 500;
   for (let i = startFrom; i < registros.length; i++) {
@@ -355,6 +375,7 @@ async function ejecutarVerificacion(registros, config, startFrom = 0) {
     verifState.progress = i + 1;
     if (i < registros.length - 1) await new Promise(r => setTimeout(r, delay));
   }
+  await notificarLoteCompletado(config.periodoNombre, verifState.results);
   verifState.running = false;
   verifState._pendingRegistros = [];
   verifState._pendingConfig = null;
