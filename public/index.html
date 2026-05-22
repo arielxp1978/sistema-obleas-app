@@ -912,11 +912,9 @@ async function iniciarVerificacion() {
 
   const registros = STATE.registros.filter(r => r.UDOMINIO);
   const nombre = periodoNombreLegible(STATE.periodo);
-  const patentes = registros.map(r => {
-    const item = { patente: r.UDOMINIO };
-    if (r.UOBLEANEW) item.oblea = parseInt(r.UOBLEANEW);
-    return item;
-  });
+  // Solo patente — no enviar oblea para evitar "cruce de datos" cuando el vehículo
+  // renovó con un número de oblea distinto al del CSV.
+  const patentes = registros.map(r => ({ patente: r.UDOMINIO }));
 
   try {
     let resp = await authFetch('/api/lote', {
@@ -1158,11 +1156,7 @@ async function reintentarFallidos() {
   if (!confirm(`¿Reintentar ${fallidos.length} consultas con error?`)) return;
 
   const nombre = 'Reintento - ' + periodoNombreLegible(STATE.periodo);
-  const patentes = fallidos.map(r => {
-    const item = { patente: r.registro.UDOMINIO };
-    if (r.registro.UOBLEANEW) item.oblea = parseInt(r.registro.UOBLEANEW);
-    return item;
-  });
+  const patentes = fallidos.map(r => ({ patente: r.registro.UDOMINIO }));
 
   STATE.verificacion = STATE.verificacion.filter(r =>
     r.clasificacion.codigo !== 'ERROR_TECNICO' && r.clasificacion.codigo !== 'PROCESANDO'
