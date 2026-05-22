@@ -52,34 +52,22 @@ El repo local tiene una carpeta `app/` intermedia que no existe en S18. En S18 e
 
 ### Protocolo correcto para deployar cambios
 
-**Opción A — GitHub (preferida cuando hay conectividad):**
+**S18 NO puede hacer git pull desde GitHub (timeout). Usar siempre SCP:**
 ```bash
-# 1. Editar archivos localmente en app/
-# 2. Commit y push desde app/
-cd "/Users/arielpalomeque/Documents/App Creadas/sistema-obleas/app"
-git add <archivo>
-git commit -m "descripción"
-git push
+# Cambios en server.js:
+scp "/Users/arielpalomeque/Documents/App Creadas/sistema-obleas/app/server.js" \
+    akeneo@100.72.42.104:/home/akeneo/sistema-obleas-app/server.js
 
-# 3. En S18: pull y rebuild
-ssh akeneo@100.72.42.104 "cd /home/akeneo/sistema-obleas-app && git pull && docker compose down && docker compose up -d --build"
-```
-
-**Opción B — SCP directo (cuando GitHub no tiene conectividad desde S18):**
-```bash
-# Los archivos locales están en app/ pero en S18 van sin esa carpeta
-scp "/Users/arielpalomeque/Documents/App Creadas/sistema-obleas/app/lib/verificar.js" \
-    akeneo@100.72.42.104:/home/akeneo/sistema-obleas-app/lib/verificar.js
-
+# Cambios solo en index.html (no requiere rebuild, solo restart):
 scp "/Users/arielpalomeque/Documents/App Creadas/sistema-obleas/app/public/index.html" \
     akeneo@100.72.42.104:/home/akeneo/sistema-obleas-app/public/index.html
+ssh akeneo@100.72.42.104 "cd /home/akeneo/sistema-obleas-app && docker compose restart obleas"
 
-# Luego rebuild
+# Cambios en server.js u otros archivos (requiere rebuild):
 ssh akeneo@100.72.42.104 "cd /home/akeneo/sistema-obleas-app && docker compose down && docker compose up -d --build"
 ```
 
-**Después de cada rebuild — reconectar el tunnel:**
-El Cloudflare Tunnel corre en un container separado (`cloudflare-tunnel`). Al recrear la red Docker hay que verificar que sigue conectado:
+**Después de rebuild — reconectar el tunnel:**
 ```bash
 ssh akeneo@100.72.42.104 "docker network connect sistema-obleas-app_default cloudflare-tunnel"
 # Si dice "already exists" → bien, ya estaba conectado
@@ -123,44 +111,111 @@ ssh akeneo@192.168.0.18
 
 ---
 
-## Flujo de verificación (2026-05-18 — simplificado)
+## Flujo de verificación (implementado 2026-05-22)
 
-### Flujo actual (un solo modo)
+La verificación usa el sistema de lotes de `api.dalegas.com.ar` (S14). El flujo anterior (patente por patente vía `/api/consulta`) está deprecado pero el código del servidor lo mantiene por compatibilidad.
+
+### Flujo actual (batch via /api/lote)
 
 1. Usuario sube CSV → `POST /api/procesar` → procesa + enriquece UOBLEANEW automáticamente
 2. Usuario hace click en "▶ Iniciar Verificación"
-3. sistema-obleas consulta patente por patente al worker (`/api/consulta?patente=X&formato=enargas`)
-4. Worker maneja caché internamente — sistema-obleas no decide si cachear o no
-5. Resultados se muestran con clasificación
+3. Frontend hace `POST /api/lote` (proxy en server.js) con todas las patentes + obleas
+4. Recibe `job_id` y empieza polling `GET /api/lote/:jobId` cada 12 segundos
+5. Resultados se muestran en tiempo real a medida que llegan (cache primero, S14 después)
+6. Al completar: notificación automática al grupo **Nova Técnico** vía hub de comunicaciones
+7. Resultados clasificados con `clasificarItemLote()` en el frontend
 
-### Flujo futuro (batch — pendiente de implementar en Enargas Scrap)
+### Proxy en server.js (agregado 2026-05-22)
 
-1. sistema-obleas envía `POST /api/lote` al worker con todas las patentes + obleas
-2. Worker encola, procesa en background, notifica vía hub de comunicaciones → Nova Técnico
-3. sistema-obleas hace polling `GET /api/lote/:id` cada 30 segundos con barra de progreso
-4. Al completar: importa resultados al período
+```
+POST /api/lote        → proxy a https://api.dalegas.com.ar/api/lote
+GET  /api/lote/:jobId → proxy a https://api.dalegas.com.ar/api/lote/:jobId
+POST /api/notificar-lote → dispara notificación a hub comunicaciones (lo llama el frontend al completar)
+```
 
-**Formato del batch:**
+La API key (`DALEGAS_API_KEY`) vive en el servidor, no se expone al browser.
+
+### Formato del request al lote
+
 ```json
 {
-  "nombre": "Abril 2026",
+  "nombre": "Obleas Abril 2026",
   "patentes": [
-    {"patente": "VDE405", "oblea": "47628377"},
-    {"patente": "LPU381", "oblea": "47145715"}
-  ]
+    {"patente": "VDE405", "oblea": 47628377},
+    {"patente": "LPU381", "oblea": 47145715}
+  ],
+  "force": false
 }
 ```
 
-**Respuesta esperada del worker:** JSON completo igual a `/api/consulta?formato=enargas` por patente (compatible con `clasificarPatente()` sin cambios).
+**`oblea`**: número de oblea del período (UOBLEANEW del CSV). Se envía junto con la patente. NO omitir.
 
-**Notificación:** worker → `POST https://n8n.srv803796.hstgr.cloud/webhook/comunicaciones` con `{"tipo": "nova-tecnico", "mensaje": "✅ Lote X verificado: Y/Z OK"}` → Nova Técnico Telegram.
+### Formato de respuesta del lote (IMPORTANTE — distinto al encargo original)
 
-### Modos eliminados (2026-05-18)
+El encargo original decía `resultado.datos.pec_codigo` pero el formato real es **idéntico al viejo `/api/consulta?formato=enargas`**:
 
-Los 3 modos anteriores (Pre-cargar / Normal / Force) fueron eliminados:
-- **Pre-cargar:** enviaba lista de obleas al worker para precalentar caché. Eliminado — el batch reemplaza esto.
-- **Force:** agregaba `&force=1` para saltear caché. Eliminado — el worker maneja esto internamente.
-- No hay `forceApiUrl`, `forceApiKey` en config. No hay parámetro `force` en ninguna llamada.
+```javascript
+// item de resultados:
+{
+  patente: "PMM907",
+  oblea: 47682790,
+  status: "ok" | "pendiente" | "error",
+  fuente: "cache" | "s14" | null,
+  resultado: {
+    error: 0,           // 0=ok, 2=sin GNC, 4=procesando, 8=baja
+    data: {
+      datosPEC: { codigo: "3145", razonSocial: "SORVICOR S.R.L." },
+      datosTaller: { codigo: "IRT0550", razonSocial: "SORVICOR S.R.L." },
+      datosOperacion: { fechaHabilitacion: "...", fechaVencimiento: "..." }
+    }
+  },
+  error: "Mensaje si status=error"   // ENARGAS_TRANSITORIO, Cruce de datos, etc.
+}
+```
+
+### Tipos de error conocidos en el lote
+
+| Error | Causa | Solución |
+|---|---|---|
+| `ENARGAS_TRANSITORIO` | ENARGAS no respondió por saturación temporal | Reintentar (botón "Reintentar fallidos") |
+| `Cruce de datos` | El número de oblea enviado pertenece a otra patente en ENARGAS. En el scraper viejo era un falso positivo por timing (HTML no cargado). Con el scanner nuevo debería ser un error de datos real en el CSV | Verificar manualmente |
+| `SIC_FAILED` | Similar al cruce de datos | Verificar manualmente |
+
+### Completado del job
+
+El job puede tardar desde minutos (cache caliente) hasta horas (muchos items en S14).
+- `status: "completado"` de la API = terminó
+- Fallback: si `resueltos >= total` y `total > 0` → también cierra el polling
+
+### Notificación al completar
+
+Al terminar, el frontend llama `POST /api/notificar-lote` que envía a Nova Técnico (Telegram):
+```
+✅ Lote "Obleas Abril 2026" completado
+• Total: 505 patentes
+• OK: 356
+• Errores: 149
+```
+Hub: `https://n8n.srv803796.hstgr.cloud/webhook/comunicaciones` con `{"tipo":"nova-tecnico","mensaje":"..."}`.
+Filtro horario 7am–midnight ART en el hub (si termina de madrugada, el mensaje se descarta).
+
+---
+
+## Clasificación en el frontend (clasificarItemLote)
+
+```
+status=pendiente → PENDIENTE (Verificando...)
+status=error     → ERROR_TECNICO (texto del error)
+resultado.error=2 → NO_RENOVO
+resultado.error=8 → BAJA_GNC
+resultado.error=4 → PROCESANDO
+resultado.error=0 → clasificar por PEC y Taller:
+  PEC en [3145,3286] + Taller en [IRT0550,HIT0797,QUT0856] → NUESTRO_PEC_NUESTRO_TALLER
+  PEC en [3145,3286] solo                                   → NUESTRO_PEC_OTRO_TALLER
+  otro                                                       → OTRO_PEC
+```
+
+**Talleres Nova**: IRT0550 (Sorvicor), HIT0797 (Nova GNC), **QUT0856** (también de Nova, confirmado 2026-05-22).
 
 ---
 
@@ -186,42 +241,22 @@ Para cada patente sin UOBLEANEW:
   ORDER BY patente, vencimiento_oblea ASC
 ```
 
-**Por qué el filtro de fecha garantiza la oblea correcta:** una oblea nueva (post-renovación) vence 1-2 años en el futuro, nunca en el mes del período. Las que vencen en el período son las obleas viejas — exactamente el UOBLEANEW del CSV.
-
 **No bloqueante:** si falla la consulta a enargas_data, el CSV se procesa igual sin el campo.
-
-### Estado de los datos existentes
-
-- `data/periodos/4-2026.json` en S18: 503/505 registros tienen UOBLEANEW
-- Las 2 sin oblea en DB: `AE884XB` y `DXZ114` (quedan con `UOBLEANEW: ""`)
 
 ---
 
-## Lógica de clasificación de obleas (verificar.js)
+## Lógica de clasificación legacy (verificar.js — modo patente por patente)
 
-El CSV de ENARGAS contiene obleas con `UFECVENHAB` = fecha de vencimiento del período analizado.
-
-Para cada vehículo se consulta el worker y se clasifica:
+Mantenida por compatibilidad pero no se usa en el flujo actual.
 
 | Resultado | Condición |
 |---|---|
 | **Nuestro PEC + Nuestro Taller** | `fechaVencimiento` nueva oblea > `UFECVENHAB` Y PEC = 3145/3286 Y Taller = IRT0550/HIT0797 |
 | **Nuestro PEC + Taller Externo** | Igual pero taller no es de Nova |
 | **Otro PEC** | Renovó pero en PEC externo |
-| **No Renovó** | `fechaVencimiento` <= `UFECVENHAB` (no hay operación posterior al vencimiento) |
+| **No Renovó** | No hay operación posterior al vencimiento |
 
-**IMPORTANTE:** La comparación usa `fechaVencimiento` de la nueva oblea (no `fechaHabilitacion`).  
-Así se detectan renovaciones anticipadas (ej: oblea vence en abril, el cliente vino en marzo → nueva oblea vence en 2027 > abril → renovó).  
-Corregido el 2026-05-15. Si se usa `fechaHabilitacion`, las renovaciones anticipadas aparecen como "No Renovó" por error.
-
-### PECs y Talleres de Nova
-
-| Código | Razón Social | Tipo |
-|---|---|---|
-| `3145` | SORVICOR S.R.L. | PEC |
-| `3286` | GRUPO P5 S.R.L. | PEC |
-| `IRT0550` | SORVICOR S.R.L. | Taller |
-| `HIT0797` | NOVA GNC S.R.L. | Taller |
+**IMPORTANTE:** La comparación usa `fechaVencimiento` (no `fechaHabilitacion`).
 
 ---
 
@@ -236,62 +271,37 @@ Solo se procesan registros donde:
 
 ## Periodos guardados
 
-Los archivos `.json` en `data/periodos/` se nombran `MM-YYYY.json` según el mes del campo `UFECVENHAB` del CSV.
-
-Estructura del JSON:
-```json
-{
-  "periodoId": "4-2026",
-  "registros": [
-    {
-      "UDOMINIO": "VDE405",
-      "UOBLEANEW": "47628377",
-      "UFECVENHAB": "1/4/2026",
-      "TCODTAL": "IRT0550",
-      ...
-    }
-  ],
-  "verificacion": {
-    "resumen": { "NO_RENOVO": 12, "NUESTRO_PEC_NUESTRO_TALLER": 5 },
-    "detalle": [...]
-  },
-  "guardadoEn": "...",
-  "version": 1
-}
-```
-
-La verificación solo se guarda si Yhonny hace click en 💾 después de correrla.
+Los archivos `.json` en `data/periodos/` se nombran `MM-YYYY.json`.
 
 ---
 
 ## Variables de entorno (.env en S18)
 
 ```
-APP_CLAVE=<ver en S18: cat /home/akeneo/sistema-obleas-app/.env>
-GOOGLE_CLIENT_ID=<Google Cloud Console — proyecto Nova GNC>
-GOOGLE_CLIENT_SECRET=<Google Cloud Console — proyecto Nova GNC>
+APP_CLAVE=<ver en S18>
+GOOGLE_CLIENT_ID=<Google Cloud Console>
+GOOGLE_CLIENT_SECRET=<Google Cloud Console>
 GOOGLE_REDIRECT_URI=https://obleas.novagnc.com.ar/auth/google/callback
 PGHOST=168.231.93.65
 PGPORT=5435
 PGDATABASE=cdp_nova
 PGUSER=gnc_admin
 PGPASSWORD=<ver en MAPA-SISTEMA.md o en S18 .env>
+# Agregadas 2026-05-22 (tienen fallback hardcodeado, no son obligatorias):
+DALEGAS_API_URL=https://api.dalegas.com.ar
+DALEGAS_API_KEY=AppNovaSecret2026
+COMUNICACIONES_HUB_URL=https://n8n.srv803796.hstgr.cloud/webhook/comunicaciones
 ```
-
-`server.js` crea dos pools PostgreSQL con las mismas credenciales:
-- `pool` → `cdp_nova` (autenticación Google OAuth)
-- `poolEnargas` → `enargas_data` (enriquecimiento UOBLEANEW)
 
 ---
 
 ## Pendientes conocidos
 
-1. **Verificación por lotes (batch)** — implementar frontend de polling una vez que Enargas Scrap tenga `POST /api/lote` y `GET /api/lote/:id` listos. Encargo en `Enargas Scrap/encargos/pendientes/2026-05-15-de-sistema-obleas-verificacion-por-lotes.md`
-2. **Notificación via comunicaciones** — encargo en `comunicaciones/encargos/pendientes/2026-05-18-de-sistema-obleas-notificacion-lote-verificacion.md`. Verificar endpoint y pasárselo al worker.
-3. **Guía de uso para Yhonny** — documento operativo paso a paso
-4. **Importar datos desde enargas_data** — mostrar meses disponibles para seleccionar en vez de subir CSV manual
-5. **Importación automática a ManyChat** — post-limpieza de teléfonos, Yhonny solo hace el broadcast
-6. **Sincronizar estructura local ↔ S18** — la carpeta `app/` local no existe en S18; evaluar unificar con deploy script o action de GitHub
+1. **QUT0856 en talleresPropios de verificar.js** — el archivo `lib/verificar.js` (modo legacy) solo tiene IRT0550 y HIT0797. Si se vuelve a usar ese modo, agregar QUT0856.
+2. **Guía de uso para Yhonny** — documento operativo paso a paso
+3. **Importar datos desde enargas_data** — mostrar meses disponibles para seleccionar en vez de subir CSV manual
+4. **Importación automática a ManyChat** — post-limpieza de teléfonos, Yhonny solo hace el broadcast
+5. **Sincronizar estructura local ↔ S18** — evaluar unificar con deploy script o action de GitHub
 
 ---
 
@@ -304,12 +314,13 @@ ssh akeneo@100.72.42.104 "docker logs sistema-obleas --tail 50"
 # Ver períodos guardados
 ssh akeneo@100.72.42.104 "ls /home/akeneo/sistema-obleas-app/data/periodos/"
 
-# Verificar UOBLEANEW en un período
-ssh akeneo@100.72.42.104 "docker exec sistema-obleas cat /app/data/periodos/4-2026.json" | python3 -c "
-import json,sys
-d=json.load(sys.stdin)
-con=sum(1 for r in d['registros'] if r.get('UOBLEANEW'))
-print(f'Registros: {len(d[\"registros\"])} | Con UOBLEANEW: {con}')
+# Consultar estado de un job de lote
+curl -s -H "X-API-Key: AppNovaSecret2026" "https://api.dalegas.com.ar/api/lote/obleas-abril-2026" | python3 -c "
+import json,sys; d=json.load(sys.stdin)
+r=d.get('resultados',[])
+from collections import Counter
+print('status:', d.get('status'), '| total:', len(r))
+print('por status:', dict(Counter(x.get('status') for x in r)))
 "
 
 # Estado del container
@@ -317,5 +328,4 @@ ssh akeneo@100.72.42.104 "docker ps | grep obleas"
 
 # Test endpoint
 curl -s -o /dev/null -w "%{http_code}" https://obleas.novagnc.com.ar/login
-# Debe devolver 200
 ```
