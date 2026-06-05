@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Informe de Gestión de Obleas — Nova GNC</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root {
+  --primary: #1a73e8; --primary-dark: #1557b0; --success: #34a853;
+  --warning: #f9ab00; --danger: #ea4335; --bg: #f8f9fa;
+  --card: #fff; --text: #202124; --text-sec: #5f6368;
+  --border: #dadce0; --radius: 8px;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); }
+header { background: linear-gradient(135deg, #1a73e8, #4285f4); color:#fff; padding:16px 24px; display:flex; justify-content:space-between; align-items:center; box-shadow:0 2px 8px rgba(0,0,0,.15); }
+header h1 { font-size:1.3em; font-weight:600; }
+header .links { display:flex; gap:12px; align-items:center; }
+header .links a, header .links button { color:#fff; background:rgba(255,255,255,.15); border:1px solid rgba(255,255,255,.3); padding:6px 14px; border-radius:20px; cursor:pointer; font-size:.85em; text-decoration:none; transition:.2s; }
+header .links a:hover, header .links button:hover { background:rgba(255,255,255,.3); }
+.container { max-width:1200px; margin:0 auto; padding:20px; }
+.card { background:var(--card); border-radius:var(--radius); border:1px solid var(--border); padding:20px; margin-bottom:16px; box-shadow:0 1px 3px rgba(0,0,0,.05); }
+.card h3 { font-size:1.05em; color:var(--text); margin-bottom:14px; padding-bottom:8px; border-bottom:1px solid #eee; display:flex; align-items:center; gap:8px; }
+.btn { padding:8px 18px; border:none; border-radius:6px; cursor:pointer; font-size:.9em; font-weight:500; transition:.2s; display:inline-flex; align-items:center; gap:6px; }
+.btn-primary { background:var(--primary); color:#fff; }
+.btn-primary:hover { background:var(--primary-dark); }
+.btn-warning { background:var(--warning); color:#fff; }
+.btn-warning:hover { background:#e09b00; }
+.btn:disabled { opacity:.5; cursor:not-allowed; }
+.form-group { display:flex; flex-direction:column; gap:4px; }
+.form-group label { font-size:.82em; font-weight:500; color:var(--text-sec); }
+input[type=month] { padding:8px 12px; border:1px solid var(--border); border-radius:6px; font-size:.9em; }
+input[type=month]:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 2px rgba(26,115,232,.15); }
+.flex { display:flex; } .flex-wrap { flex-wrap:wrap; }
+.gap-3 { gap:12px; } .gap-4 { gap:16px; }
+.items-end { align-items:flex-end; }
+.hidden { display:none !important; }
+table { width:100%; border-collapse:collapse; font-size:.875em; }
+th, td { padding:10px 12px; text-align:left; border-bottom:1px solid #eee; }
+th { background:#f8f9fa; font-weight:600; color:var(--text-sec); font-size:.78em; text-transform:uppercase; letter-spacing:.03em; }
+tr:last-child td { border-bottom:none; }
+tr:hover td { background:#f8f9fa; }
+td.num { text-align:right; font-variant-numeric:tabular-nums; }
+th.num { text-align:right; }
+tr.total-row td { font-weight:700; border-top:2px solid var(--border); }
+.badge { display:inline-flex; align-items:center; gap:5px; padding:4px 12px; border-radius:20px; font-size:.82em; font-weight:600; }
+.badge-provisional { background:#fef7e0; color:#e37400; border:1px solid #fdd663; }
+.badge-cerrado { background:#e6f4ea; color:#1e8e3e; border:1px solid #b7e1cd; }
+.alert { padding:12px 16px; border-radius:var(--radius); font-size:.9em; margin-bottom:16px; }
+.alert-warning { background:#fef7e0; color:#7a4200; border:1px solid #fdd663; }
+.alert-success { background:#e6f4ea; color:#0d5c25; border:1px solid #b7e1cd; }
+.two-col { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+@media(max-width:700px) { .two-col { grid-template-columns:1fr; } }
+.ms-bar-wrap { display:flex; align-items:center; gap:8px; }
+.ms-bar-track { flex:1; background:#f0f0f0; border-radius:4px; height:18px; overflow:hidden; }
+.ms-bar-fill { height:100%; border-radius:4px; transition:width .6s; display:flex; align-items:center; justify-content:flex-end; padding-right:6px; font-size:.75em; font-weight:700; color:#fff; }
+.ms-bar-fill.propio { background:var(--primary); }
+.ms-bar-fill.red { background:var(--success); }
+.spinner { display:inline-block; width:28px; height:28px; border:3px solid rgba(26,115,232,.2); border-top-color:var(--primary); border-radius:50%; animation:spin .6s linear infinite; }
+@keyframes spin { to { transform:rotate(360deg); } }
+.text-center { text-align:center; }
+.chart-card-dark { background:linear-gradient(145deg,#1a1d2e,#0d1117); border:1px solid rgba(255,255,255,.08); border-radius:12px; padding:20px; margin-bottom:16px; box-shadow:0 8px 32px rgba(0,0,0,.25); }
+.chart-card-dark h3 { color:#e8eaed; border-bottom-color:rgba(255,255,255,.1); }
+.selector-bar { display:flex; align-items:flex-end; gap:12px; flex-wrap:wrap; }
+.mb-0 { margin-bottom:0 !important; }
+.notas-list { padding-left:20px; list-style:disc; font-size:.875em; line-height:1.9; color:var(--text-sec); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>📊 Informe de Gestión de Obleas</h1>
+  <div class="links">
+    <a href="/">← Volver</a>
+    <button onclick="cerrarSesion()">Salir</button>
+  </div>
+</header>
+
+<div class="container">
+
+  <!-- Selector de mes -->
+  <div class="card mb-0 selector-bar">
+    <div class="form-group">
+      <label>Mes</label>
+      <input type="month" id="mesInput">
+    </div>
+    <button class="btn btn-primary" id="btnCargar" onclick="cargarInforme(false)">Cargar</button>
+    <button class="btn btn-warning" id="btnRecalcular" onclick="cargarInforme(true)" title="Recalcular y persistir el informe de este mes">↺ Recalcular</button>
+    <div id="estadoWrap" class="hidden flex items-end gap-3" style="padding-bottom:2px;">
+      <span id="estadoBadge" class="badge"></span>
+      <span id="coberturaInfo" style="font-size:.82em;color:var(--text-sec);"></span>
+    </div>
+  </div>
+
+  <!-- Placeholder inicial -->
+  <div id="placeholder" class="card text-center" style="padding:48px 24px;margin-top:16px;">
+    <p style="color:var(--text-sec);font-size:.95em;">Elegí un mes y hacé clic en <strong>Cargar</strong> para ver el informe.</p>
+  </div>
+
+  <!-- Cargando -->
+  <div id="cargandoDiv" class="hidden card text-center" style="padding:40px;margin-top:16px;">
+    <div class="spinner" style="margin:0 auto 14px;"></div>
+    <p style="color:var(--text-sec);font-size:.9em;">Cargando informe...</p>
+  </div>
+
+  <!-- Error -->
+  <div id="errorDiv" class="hidden" style="margin-top:16px;">
+    <div class="alert alert-warning" id="errorMsg"></div>
+  </div>
+
+  <!-- Contenido del informe -->
+  <div id="contenidoInforme" class="hidden" style="margin-top:16px;">
+
+    <!-- Alerta de estado -->
+    <div id="alertEstado" class="alert"></div>
+
+    <!-- Producción -->
+    <div class="card">
+      <h3>🏭 Producción del mes</h3>
+      <div style="overflow-x:auto;">
+        <table id="tablaProduccion">
+          <thead>
+            <tr>
+              <th>Segmento</th>
+              <th class="num">Obleas</th>
+              <th class="num">PH</th>
+              <th class="num">Conversiones</th>
+              <th class="num">Total</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Market Share + Mercado total -->
+    <div class="two-col">
+      <div class="card">
+        <h3>📈 Market Share</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>Segmento</th>
+              <th class="num">Propio</th>
+              <th class="num">Red PEC</th>
+            </tr>
+          </thead>
+          <tbody id="tablaMs"></tbody>
+        </table>
+      </div>
+      <div class="card">
+        <h3>🌐 Mercado Córdoba Ciudad</h3>
+        <table>
+          <thead>
+            <tr><th>Segmento</th><th class="num">Unidades</th></tr>
+          </thead>
+          <tbody id="tablaMercado"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Notas -->
+    <div id="notasDiv" class="card hidden">
+      <h3>📝 Notas del informe</h3>
+      <ul id="listaNotas" class="notas-list"></ul>
+    </div>
+
+  </div>
+
+  <!-- Serie histórica -->
+  <div class="chart-card-dark" id="cardSerie">
+    <h3>📅 Evolución histórica</h3>
+    <div id="placeholderSerie" class="text-center" style="padding:20px;color:#9aa0a6;font-size:.88em;">Cargando datos históricos...</div>
+    <canvas id="chartSerie" class="hidden" style="max-height:360px;"></canvas>
+    <div id="leyendaSerie" class="hidden" style="margin-top:10px;display:flex;gap:20px;flex-wrap:wrap;justify-content:center;font-size:.78em;color:#9aa0a6;">
+      <span style="display:flex;align-items:center;gap:5px;"><span style="display:inline-block;width:24px;height:3px;background:#4285f4;border-radius:2px;"></span>Producción propia (obleas)</span>
+      <span style="display:flex;align-items:center;gap:5px;"><span style="display:inline-block;width:24px;height:3px;background:#fbbc04;border-radius:2px;"></span>MS obleas propio %</span>
+      <span style="display:flex;align-items:center;gap:5px;"><span style="display:inline-block;width:24px;height:3px;background:#34a853;border-radius:2px;"></span>MS obleas Red PEC %</span>
+      <span style="display:flex;align-items:center;gap:5px;"><span style="display:inline-block;width:20px;height:3px;background:#9aa0a6;border-top:2px dashed #9aa0a6;"></span>Mes provisional</span>
+    </div>
+  </div>
+
+</div>
+
+<script>
+function getToken() {
+  const m = document.cookie.match(/token=([a-f0-9]{64})/);
+  return m ? m[1] : null;
+}
+async function authFetch(url, opts = {}) {
+  if (!opts.headers) opts.headers = {};
+  const t = getToken();
+  if (t) opts.headers['Authorization'] = 'Bearer ' + t;
+  const r = await fetch(url, opts);
+  if (r.status === 401) { window.location.href = '/login'; return null; }
+  return r;
+}
+async function cerrarSesion() {
+  await authFetch('/api/logout', { method: 'POST' });
+  window.location.href = '/login';
+}
+
+let chartSerie = null;
+
+function mesLabel(m) {
+  if (!m) return '';
+  const [y, mo] = m.split('-');
+  const meses = ['','Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  return meses[parseInt(mo)] + ' ' + y;
+}
+
+function fmtNum(n) {
+  if (n == null || n === undefined) return '—';
+  return Number(n).toLocaleString('es-AR');
+}
+function fmtPct(n) {
+  if (n == null) return '—';
+  return Number(n).toFixed(2) + '%';
+}
+
+function setLoading(on) {
+  document.getElementById('cargandoDiv').classList.toggle('hidden', !on);
+  document.getElementById('btnCargar').disabled = on;
+  document.getElementById('btnRecalcular').disabled = on;
+}
+
+function mostrarError(msg) {
+  document.getElementById('placeholder').classList.add('hidden');
+  document.getElementById('contenidoInforme').classList.add('hidden');
+  document.getElementById('errorMsg').textContent = msg;
+  document.getElementById('errorDiv').classList.remove('hidden');
+}
+
+function renderInforme(d) {
+  document.getElementById('placeholder').classList.add('hidden');
+  document.getElementById('errorDiv').classList.add('hidden');
+  document.getElementById('contenidoInforme').classList.remove('hidden');
+
+  // Estado
+  const cerrado = d.estado === 'cerrado';
+  const badgeEl = document.getElementById('estadoBadge');
+  badgeEl.textContent = cerrado ? '✅ Cerrado' : '⚠️ Provisional';
+  badgeEl.className = 'badge ' + (cerrado ? 'badge-cerrado' : 'badge-provisional');
+  document.getElementById('coberturaInfo').textContent =
+    'Cobertura scanner: ' + (d.cobertura_scanner_pct ?? '?') + '% (umbral ' + (d.umbral_cierre_pct ?? 95) + '%)';
+  document.getElementById('estadoWrap').classList.remove('hidden');
+
+  const alerta = document.getElementById('alertEstado');
+  if (cerrado) {
+    alerta.className = 'alert alert-success';
+    alerta.innerHTML = '<strong>Informe cerrado</strong> — cobertura del scanner ≥ ' + d.umbral_cierre_pct + '%. Datos firmes.';
+  } else {
+    alerta.className = 'alert alert-warning';
+    alerta.innerHTML = '<strong>Datos preliminares</strong> — el scanner cubrió el ' + d.cobertura_scanner_pct + '% del mes. Los números pueden cambiar al recalcular una vez completado.';
+  }
+
+  // Producción
+  const p = d.produccion || {};
+  const rows = [
+    { label: 'Talleres propios', data: p.talleres_propios || {} },
+    { label: 'Comisionistas', data: p.comisionistas || {} },
+    { label: 'Red PEC total', data: p.red_pec_total || {} },
+  ];
+  const tbody = document.querySelector('#tablaProduccion tbody');
+  tbody.innerHTML = '';
+  let totO = 0, totP = 0, totC = 0;
+  rows.forEach(r => {
+    const o = r.data.obleas || 0, ph = r.data.ph || 0, conv = r.data.conversiones || 0;
+    const tot = o + ph + conv;
+    if (r.label !== 'Red PEC total') { totO += o; totP += ph; totC += conv; }
+    tbody.insertAdjacentHTML('beforeend', `<tr>
+      <td>${r.label}</td>
+      <td class="num">${fmtNum(o)}</td>
+      <td class="num">${fmtNum(ph)}</td>
+      <td class="num">${fmtNum(conv)}</td>
+      <td class="num" style="color:var(--text-sec);">${fmtNum(tot)}</td>
+    </tr>`);
+  });
+  // Fila subtotal propios
+  const pec = p.red_pec_total || {};
+  tbody.insertAdjacentHTML('beforeend', `<tr class="total-row">
+    <td>TOTAL Red PEC (obleas+ph+conv)</td>
+    <td class="num">${fmtNum(pec.obleas)}</td>
+    <td class="num">${fmtNum(pec.ph)}</td>
+    <td class="num">${fmtNum(pec.conversiones)}</td>
+    <td class="num">${fmtNum((pec.obleas||0)+(pec.ph||0)+(pec.conversiones||0))}</td>
+  </tr>`);
+
+  // Market Share
+  const ms = d.market_share || {};
+  const msRows = [
+    { label: 'Obleas', key: 'obleas' },
+    { label: 'PH', key: 'ph' },
+    { label: 'Conversiones', key: 'conversiones' },
+  ];
+  const msMaxPropio = Math.max(...msRows.map(r => ms[r.key]?.propio_pct || 0));
+  const msMaxRed = Math.max(...msRows.map(r => ms[r.key]?.red_pec_pct || 0));
+  const msBody = document.getElementById('tablaMs');
+  msBody.innerHTML = '';
+  msRows.forEach(r => {
+    const pct = ms[r.key] || {};
+    const pp = pct.propio_pct || 0, rp = pct.red_pec_pct || 0;
+    const wPropio = msMaxPropio > 0 ? (pp / msMaxPropio * 100).toFixed(1) : 0;
+    const wRed    = msMaxRed > 0   ? (rp / msMaxRed * 100).toFixed(1)    : 0;
+    msBody.insertAdjacentHTML('beforeend', `<tr>
+      <td>${r.label}</td>
+      <td class="num">
+        <div class="ms-bar-wrap">
+          <div class="ms-bar-track"><div class="ms-bar-fill propio" style="width:${wPropio}%">${pp >= 1 ? fmtPct(pp) : ''}</div></div>
+          <span style="font-size:.8em;min-width:46px;text-align:right;">${fmtPct(pp)}</span>
+        </div>
+      </td>
+      <td class="num">
+        <div class="ms-bar-wrap">
+          <div class="ms-bar-track"><div class="ms-bar-fill red" style="width:${wRed}%">${rp >= 1 ? fmtPct(rp) : ''}</div></div>
+          <span style="font-size:.8em;min-width:46px;text-align:right;">${fmtPct(rp)}</span>
+        </div>
+      </td>
+    </tr>`);
+  });
+
+  // Mercado total
+  const merc = d.mercado_oficial_cordoba || {};
+  const mercBody = document.getElementById('tablaMercado');
+  mercBody.innerHTML = `
+    <tr><td>Obleas</td><td class="num"><strong>${fmtNum(merc.obleas)}</strong></td></tr>
+    <tr><td>PH</td><td class="num"><strong>${fmtNum(merc.ph)}</strong></td></tr>
+    <tr><td>Conversiones</td><td class="num"><strong>${fmtNum(merc.conversiones)}</strong></td></tr>
+  `;
+
+  // Notas
+  const notas = d.notas || [];
+  const notasDiv = document.getElementById('notasDiv');
+  if (notas.length) {
+    const ul = document.getElementById('listaNotas');
+    ul.innerHTML = notas.map(n => `<li>${n}</li>`).join('');
+    notasDiv.classList.remove('hidden');
+  } else {
+    notasDiv.classList.add('hidden');
+  }
+}
+
+async function cargarInforme(force) {
+  const mes = document.getElementById('mesInput').value;
+  if (!mes) { alert('Elegí un mes primero.'); return; }
+
+  document.getElementById('placeholder').classList.add('hidden');
+  document.getElementById('errorDiv').classList.add('hidden');
+  document.getElementById('contenidoInforme').classList.add('hidden');
+  setLoading(true);
+
+  try {
+    let resp;
+    if (force) {
+      resp = await authFetch('/api/informe-obleas/generar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mes })
+      });
+    } else {
+      resp = await authFetch('/api/informe-obleas?mes=' + mes);
+    }
+    if (!resp) return;
+
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ error: 'Error desconocido' }));
+      mostrarError('No se pudo obtener el informe: ' + (err.error || resp.statusText));
+      return;
+    }
+
+    const data = await resp.json();
+    renderInforme(data);
+
+    // Recargar serie para reflejar cambios
+    cargarSerie();
+  } catch (e) {
+    mostrarError('Error de red: ' + e.message);
+  } finally {
+    setLoading(false);
+  }
+}
+
+async function cargarSerie() {
+  const placeholder = document.getElementById('placeholderSerie');
+  const canvas = document.getElementById('chartSerie');
+  const leyenda = document.getElementById('leyendaSerie');
+
+  try {
+    const resp = await authFetch('/api/informe-obleas/serie');
+    if (!resp) return;
+    if (!resp.ok) {
+      placeholder.textContent = 'No se pudo cargar la serie histórica.';
+      return;
+    }
+
+    const { serie } = await resp.json();
+    if (!serie || serie.length === 0) {
+      placeholder.textContent = 'Sin datos históricos disponibles aún.';
+      return;
+    }
+
+    const labels = serie.map(s => mesLabel(s.mes));
+    const produccionPropia = serie.map(s => s.produccion_propia?.obleas ?? null);
+    const msPropio = serie.map(s => s.ms_obleas_propio_pct ?? null);
+    const msRed    = serie.map(s => s.ms_obleas_red_pec_pct ?? null);
+
+    // Estilos por punto: provisional = open circle, cerrado = full circle
+    const pointStylePropia = serie.map(s => s.estado === 'cerrado' ? 'circle' : 'rectRot');
+    const pointStyleMs = serie.map(s => s.estado === 'cerrado' ? 'circle' : 'rectRot');
+
+    placeholder.classList.add('hidden');
+    canvas.classList.remove('hidden');
+    leyenda.classList.remove('hidden');
+
+    if (chartSerie) { chartSerie.destroy(); chartSerie = null; }
+
+    chartSerie = new Chart(canvas, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          {
+            label: 'Producción propia (obleas)',
+            data: produccionPropia,
+            borderColor: '#4285f4',
+            backgroundColor: 'rgba(66,133,244,.12)',
+            fill: true,
+            tension: 0.3,
+            yAxisID: 'yVol',
+            pointStyle: pointStylePropia,
+            pointRadius: 5,
+            pointBackgroundColor: serie.map(s => s.estado === 'cerrado' ? '#4285f4' : 'transparent'),
+            pointBorderColor: '#4285f4',
+            pointBorderWidth: 2,
+          },
+          {
+            label: 'MS obleas propio %',
+            data: msPropio,
+            borderColor: '#fbbc04',
+            backgroundColor: 'transparent',
+            tension: 0.3,
+            yAxisID: 'yPct',
+            pointStyle: pointStyleMs,
+            pointRadius: 5,
+            pointBackgroundColor: serie.map(s => s.estado === 'cerrado' ? '#fbbc04' : 'transparent'),
+            pointBorderColor: '#fbbc04',
+            pointBorderWidth: 2,
+          },
+          {
+            label: 'MS obleas Red PEC %',
+            data: msRed,
+            borderColor: '#34a853',
+            backgroundColor: 'transparent',
+            tension: 0.3,
+            yAxisID: 'yPct',
+            pointStyle: pointStyleMs,
+            pointRadius: 5,
+            pointBackgroundColor: serie.map(s => s.estado === 'cerrado' ? '#34a853' : 'transparent'),
+            pointBorderColor: '#34a853',
+            pointBorderWidth: 2,
+          },
+        ]
+      },
+      options: {
+        responsive: true,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: {
+            display: false,
+          },
+          tooltip: {
+            callbacks: {
+              afterLabel: (ctx) => {
+                const idx = ctx.dataIndex;
+                if (serie[idx].estado === 'provisional') return '  ⚠️ Provisional (' + serie[idx].cobertura_scanner_pct + '% cobertura)';
+                return '  ✅ Cerrado';
+              }
+            }
+          }
+        },
+        scales: {
+          x: {
+            ticks: { color: '#9aa0a6', font: { size: 11 } },
+            grid: { color: 'rgba(255,255,255,.06)' },
+          },
+          yVol: {
+            type: 'linear',
+            position: 'left',
+            ticks: { color: '#4285f4', font: { size: 11 } },
+            grid: { color: 'rgba(255,255,255,.06)' },
+            title: { display: true, text: 'Obleas propias', color: '#4285f4', font: { size: 11 } }
+          },
+          yPct: {
+            type: 'linear',
+            position: 'right',
+            ticks: {
+              color: '#fbbc04',
+              font: { size: 11 },
+              callback: v => v + '%'
+            },
+            grid: { drawOnChartArea: false },
+            title: { display: true, text: 'Market share %', color: '#fbbc04', font: { size: 11 } }
+          }
+        }
+      }
+    });
+
+    // Si hay solo un mes en la serie, autocargar ese mes
+    if (serie.length === 1 && !document.getElementById('mesInput').value) {
+      document.getElementById('mesInput').value = serie[0].mes;
+    }
+  } catch (e) {
+    placeholder.textContent = 'Error cargando serie: ' + e.message;
+  }
+}
+
+// Init
+(function init() {
+  // Default: mes anterior
+  const now = new Date();
+  const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const yy = prev.getFullYear();
+  const mm = String(prev.getMonth() + 1).padStart(2, '0');
+  document.getElementById('mesInput').value = yy + '-' + mm;
+
+  cargarSerie();
+})();
+</script>
+</body>
+</html>

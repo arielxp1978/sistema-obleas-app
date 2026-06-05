@@ -17,6 +17,7 @@ const APP_CLAVE = process.env.APP_CLAVE || 'nova2026';
 const COMUNICACIONES_HUB_URL = process.env.COMUNICACIONES_HUB_URL || 'https://n8n.srv803796.hstgr.cloud/webhook/comunicaciones';
 const DALEGAS_API_URL = process.env.DALEGAS_API_URL || 'https://api.dalegas.com.ar';
 const DALEGAS_API_KEY = process.env.DALEGAS_API_KEY || 'AppNovaSecret2026';
+const INFORME_OBLEAS_API_KEY = process.env.INFORME_OBLEAS_API_KEY || 'SistemaObleas2026';
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 const GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI || 'http://192.168.0.18:3080/auth/google/callback';
@@ -468,6 +469,56 @@ app.post('/api/notificar-lote', async (req, res) => {
   const { periodoNombre, total, ok, errores } = req.body;
   await notificarLoteCompletado(periodoNombre, total, ok, errores);
   res.json({ ok: true });
+});
+
+// ============================================================
+// INFORME MENSUAL DE GESTIÓN DE OBLEAS (proxy → api.dalegas.com.ar)
+// ============================================================
+
+app.get('/api/informe-obleas', async (req, res) => {
+  try {
+    const mes = req.query.mes || '';
+    const zona = req.query.zona || 'cordoba_ciudad';
+    const url = `${DALEGAS_API_URL}/api/informe/obleas?mes=${encodeURIComponent(mes)}&zona=${encodeURIComponent(zona)}`;
+    const resp = await fetch(url, {
+      headers: { 'X-API-Key': INFORME_OBLEAS_API_KEY },
+      signal: AbortSignal.timeout(30000)
+    });
+    const data = await resp.json();
+    res.status(resp.status).json(data);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/informe-obleas/generar', async (req, res) => {
+  try {
+    const resp = await fetch(`${DALEGAS_API_URL}/api/informe/obleas/generar`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-API-Key': INFORME_OBLEAS_API_KEY },
+      body: JSON.stringify(req.body),
+      signal: AbortSignal.timeout(60000)
+    });
+    const data = await resp.json();
+    res.status(resp.status).json(data);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/api/informe-obleas/serie', async (req, res) => {
+  try {
+    const zona = req.query.zona || 'cordoba_ciudad';
+    const url = `${DALEGAS_API_URL}/api/informe/obleas/serie?zona=${encodeURIComponent(zona)}`;
+    const resp = await fetch(url, {
+      headers: { 'X-API-Key': INFORME_OBLEAS_API_KEY },
+      signal: AbortSignal.timeout(30000)
+    });
+    const data = await resp.json();
+    res.status(resp.status).json(data);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ============================================================
