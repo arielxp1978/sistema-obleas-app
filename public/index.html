@@ -1043,7 +1043,17 @@ async function iniciarVerificacion() {
       const msg = String(data.error || '');
       const esConflicto = msg.toLowerCase().includes('ya existe') || resp.status === 409 || resp.status === 400;
       if (esConflicto) {
-        if (!confirm(`Ya existe un job para "${nombre}".\n¿Forzar nuevo análisis? (descarta el anterior)`)) return;
+        // Ya existe una verificación para este período → por defecto VERLA (no destructivo).
+        const jobIdExistente = data.job_id || slugifyJob(nombre);
+        const verExistente = confirm(
+          `Ya existe la verificación de "${nombre}".\n\n` +
+          `Aceptar → VER los resultados guardados (NO se borra nada). ← recomendado\n` +
+          `Cancelar → otras opciones`
+        );
+        if (verExistente) { cargarJobExistente(jobIdExistente, patentes.length, registros); return; }
+        // Segunda decisión, explícita: re-analizar de cero es DESTRUCTIVO
+        if (!confirm(`¿RE-ANALIZAR de cero "${nombre}"?\n\n⚠️ Esto DESCARTA la verificación existente y la corre de nuevo.\n\nAceptar → re-analizar (descarta lo anterior).\nCancelar → no hacer nada.`)) return;
+        STATE._verifSoloVer = false;
         resp = await authFetch('/api/lote', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ nombre, patentes, force: true })
@@ -1064,6 +1074,7 @@ async function iniciarVerificacion() {
     STATE._verifJobId = jobId;
     STATE._verifRegMap = regMap;
     STATE._verifCancelled = false;
+    STATE._verifSoloVer = false;
 
     document.getElementById('btnIniciarVerif').disabled = true;
     document.getElementById('btnPausarVerif').classList.add('hidden');
@@ -1126,6 +1137,37 @@ function clasificarItemLote(item, config) {
   return { codigo: 'OTRO_PEC', texto: 'Otro PEC', ...enriquecido };
 }
 
+// Deriva el jobId (slug) desde el nombre del período, igual que dalegas.
+function slugifyJob(s) {
+  return (s || '').toString().toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')  // quitar acentos
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+// Adjunta a un job de verificación ya existente y muestra sus resultados SIN re-analizar.
+function cargarJobExistente(jobId, total, registros) {
+  const regs = registros || STATE.registros || [];
+  const regMap = {};
+  regs.forEach(r => { if (r.UDOMINIO) regMap[r.UDOMINIO] = r; });
+  STATE._verifJobId = jobId;
+  STATE._verifRegMap = regMap;
+  STATE._verifCancelled = false;
+  STATE._verifSoloVer = true;  // solo ver: no re-notificar a Telegram al "completar"
+
+  document.getElementById('btnIniciarVerif').disabled = true;
+  document.getElementById('btnPausarVerif').classList.add('hidden');
+  document.getElementById('btnCancelarVerif').classList.remove('hidden');
+  document.getElementById('verifProgress').style.display = 'block';
+  document.getElementById('verifLog').style.display = 'block';
+  document.getElementById('verifLog').innerHTML = '';
+  agregarLogVerif('ok', `Cargando verificación existente: ${jobId}`);
+  switchTab('verificacion');
+
+  clearInterval(verifInterval);
+  pollLote(jobId, total);  // primer render inmediato
+  verifInterval = setInterval(() => pollLote(jobId, total), 12000);
+}
+
 async function pollLote(jobId, totalExpected) {
   if (STATE._verifCancelled) { clearInterval(verifInterval); return; }
   try {
@@ -1154,12 +1196,14 @@ async function pollLote(jobId, totalExpected) {
       document.getElementById('btnCancelarVerif').classList.add('hidden');
       const ok = STATE.verificacion.filter(r => !['PENDIENTE','ERROR_TECNICO'].includes(r.clasificacion.codigo)).length;
       const errores = STATE.verificacion.filter(r => r.clasificacion.codigo === 'ERROR_TECNICO').length;
-      document.getElementById('verifStatus').textContent = '✅ Verificación completa';
-      agregarLogVerif('ok', `Completado: ${total} patentes | OK: ${ok} | Errores: ${errores}`);
-      authFetch('/api/notificar-lote', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ periodoNombre: periodoNombreLegible(STATE.periodo), total, ok, errores })
-      }).catch(() => {});
+      document.getElementById('verifStatus').textContent = STATE._verifSoloVer ? '✅ Verificación existente cargada' : '✅ Verificación completa';
+      agregarLogVerif('ok', `${STATE._verifSoloVer ? 'Cargado' : 'Completado'}: ${total} patentes | OK: ${ok} | Errores: ${errores}`);
+      if (!STATE._verifSoloVer) {
+        authFetch('/api/notificar-lote', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ periodoNombre: periodoNombreLegible(STATE.periodo), total, ok, errores })
+        }).catch(() => {});
+      }
       STATE.sinGuardar = true;
       document.getElementById('btnGuardar').classList.remove('hidden');
     } else {

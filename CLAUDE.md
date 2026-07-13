@@ -201,6 +201,16 @@ Filtro horario 7am–midnight ART en el hub (si termina de madrugada, el mensaje
 
 ---
 
+## Recuperar una verificación ya corrida (job existente) — 2026-07-13
+
+Los resultados de cada verificación viven en el **job de dalegas** (`api.dalegas.com.ar`), con id = slug del nombre del período (`"Obleas Mayo 2026"` → `obleas-mayo-2026`). El período JSON solo guarda la verificación si se aprieta 💾 **después** de correrla; si no, queda `verificacion: null` — pero **el job de dalegas la conserva igual**.
+
+Por eso, al apretar "Iniciar Verificación" sobre un período que ya se verificó, la app detecta el job existente y ofrece (frontend, `iniciarVerificacion`):
+1. **Ver los resultados guardados** (default, NO destructivo) → `cargarJobExistente()` hace polling del job existente y los renderiza. Ahí se aprieta 💾 para persistirlos en el período.
+2. **Re-analizar de cero** (segundo confirm, DESTRUCTIVO) → `force:true`, descarta el job anterior.
+
+`STATE._verifSoloVer` distingue "solo ver" de "corrida nueva" para no re-notificar a Telegram al cargar un job existente. `slugifyJob()` deriva el id igual que dalegas.
+
 ## Clasificación en el frontend (clasificarItemLote)
 
 ```
