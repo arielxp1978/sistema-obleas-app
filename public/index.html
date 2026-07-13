@@ -183,6 +183,24 @@ input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 2px rg
     </div>
   </div>
   <div class="card" style="margin-top:16px;">
+    <h3>🗓️ Traer desde InfoSys (base de datos)</h3>
+    <p style="font-size:.85em;color:var(--text-sec);margin-bottom:12px;">Seleccioná el mes de <strong>vencimiento</strong> y traé las obleas de talleres Nova directo de la base, sin subir CSV.</p>
+    <div style="display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px;">
+      <label style="font-size:.85em;color:var(--text-sec);">Mes de vencimiento
+        <input type="month" id="baseMes" style="display:block;padding:8px;border:1px solid var(--border);border-radius:8px;margin-top:4px;font-size:1em;">
+      </label>
+      <label id="baseTipoWrap" style="font-size:.85em;color:var(--text-sec);">Tipo
+        <select id="baseTipo" style="display:block;padding:8px;border:1px solid var(--border);border-radius:8px;margin-top:4px;font-size:1em;">
+          <option value="todos">Todos (obleas + PH)</option>
+          <option value="oblea">Solo obleas</option>
+          <option value="ph">Solo PH (prueba hidráulica)</option>
+        </select>
+      </label>
+      <button class="btn btn-primary" id="btnTraerBase" onclick="importarDesdeBase()">📥 Traer</button>
+    </div>
+    <div id="baseHint" style="margin-top:10px;font-size:.85em;color:var(--text-sec);"></div>
+  </div>
+  <div class="card" style="margin-top:16px;">
     <h3>📂 Obleas Guardadas <span style="font-size:.8em;font-weight:400;color:var(--text-sec);">(más recientes primero)</span></h3>
     <div id="listaPeriodos"><p style="color:var(--text-sec);font-size:.9em;">No hay períodos guardados aún.</p></div>
   </div>
@@ -517,6 +535,95 @@ async function procesarArchivo(file) {
 }
 
 // ============================================================
+// IMPORTAR DESDE BASE (InfoSys / nova_operaciones)
+// ============================================================
+// InfoSys aún NO envía los campos de cilindro/PH (se los pedimos, falta respuesta).
+// Hasta entonces mostramos TODAS las operaciones como obleas, sin separar PH.
+// Cuando el feed esté completo, poner MOSTRAR_PH = true y se activa la separación obleas/PH.
+const MOSTRAR_PH = false;
+let BASE_PERIODOS = null;
+
+async function cargarPeriodosBase() {
+  try {
+    const resp = await authFetch('/api/base/periodos');
+    const data = await resp.json();
+    if (data && data.ok) {
+      BASE_PERIODOS = {};
+      data.periodos.forEach(p => { BASE_PERIODOS[p.mes] = p; });
+      actualizarBaseHint();
+    }
+  } catch (e) { /* silencioso: el hint es opcional */ }
+}
+
+function actualizarBaseHint() {
+  const mesEl = document.getElementById('baseMes');
+  const hint = document.getElementById('baseHint');
+  if (!mesEl || !hint) return;
+  const mes = mesEl.value;
+  if (!BASE_PERIODOS || !mes) { hint.textContent = ''; return; }
+  const p = BASE_PERIODOS[mes];
+  if (!p) { hint.innerHTML = '⚠️ No hay registros de talleres Nova venciendo en ese mes.'; return; }
+  hint.innerHTML = MOSTRAR_PH
+    ? `📊 <strong>${p.total}</strong> registros venciendo ${mes} — <strong>${p.obleas}</strong> obleas · <strong>${p.ph}</strong> PH`
+    : `📊 <strong>${p.total}</strong> obleas venciendo ${mes}`;
+}
+
+function initBaseImport() {
+  const el = document.getElementById('baseMes');
+  if (!el) return;
+  const now = new Date();
+  el.value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  el.addEventListener('change', actualizarBaseHint);
+  const tipo = document.getElementById('baseTipo');
+  if (tipo) tipo.addEventListener('change', actualizarBaseHint);
+  // Mientras InfoSys no mande cilindro/PH, ocultar el selector de tipo (se trae todo como obleas)
+  const tipoWrap = document.getElementById('baseTipoWrap');
+  if (tipoWrap && !MOSTRAR_PH) tipoWrap.style.display = 'none';
+}
+
+async function importarDesdeBase() {
+  const mes = document.getElementById('baseMes').value;
+  const tipo = MOSTRAR_PH ? document.getElementById('baseTipo').value : 'todos';
+  if (!mes) { alert('Elegí un mes de vencimiento.'); return; }
+  const btn = document.getElementById('btnTraerBase');
+  const prevTxt = btn.textContent;
+  btn.disabled = true; btn.textContent = '⏳ Trayendo...';
+  try {
+    const resp = await authFetch(`/api/base/importar?mes=${encodeURIComponent(mes)}&tipo=${encodeURIComponent(tipo)}`);
+    const data = await resp.json();
+    if (!resp.ok || data.error) throw new Error(data.error || 'Error del servidor');
+    if (!data.registros || !data.registros.length) {
+      alert('No hay registros para ese mes y tipo.');
+      return;
+    }
+    STATE.periodo = data.periodo;
+    STATE.registros = data.registros;
+    STATE.metricasOriginal = data.metricasOriginal;
+    STATE.metricasFiltrado = data.metricasFiltrado;
+    STATE.normalizacion = data.normalizacion;
+    STATE.archivos = data.archivos;
+    STATE.totalOriginal = data.totalOriginal;
+    STATE.totalFiltrado = data.totalFiltrado;
+
+    document.getElementById('btnGuardar').classList.remove('hidden');
+    STATE.sinGuardar = true;
+    // reset del filtro de usuario en la tabla de teléfonos (se repuebla con los nuevos datos)
+    const selUser = document.getElementById('filtroUsuario');
+    if (selUser) selUser.length = 1;
+    actualizarArchivoActivo();
+    renderTodo();
+
+    const c = data.conteo || {};
+    switchTab('original');
+    console.log(`[base] Importados ${data.totalFiltrado} registros (${c.obleas || 0} obleas · ${c.ph || 0} PH) de ${mes}`);
+  } catch (e) {
+    alert('Error al traer desde base: ' + e.message);
+  } finally {
+    btn.disabled = false; btn.textContent = prevTxt;
+  }
+}
+
+// ============================================================
 // RENDER ALL
 // ============================================================
 function renderTodo() {
@@ -726,12 +833,16 @@ function renderTelefonos() {
 
   document.getElementById('contadorTel').textContent = `${rows.length} registros`;
 
-  let html = '<table><thead><tr><th>#</th><th>Dominio</th><th>Nombre</th><th>Localidad</th><th>Original</th><th>Sugerencia</th><th>Número Final</th><th>Estado</th><th>Error</th></tr></thead><tbody>';
+  const hayTipo = MOSTRAR_PH && STATE.registros.some(r => r._tipoGestion);
+  let html = '<table><thead><tr><th>#</th><th>Dominio</th>' + (hayTipo ? '<th>Tipo</th>' : '') + '<th>Nombre</th><th>Localidad</th><th>Original</th><th>Sugerencia</th><th>Número Final</th><th>Estado</th><th>Error</th></tr></thead><tbody>';
   rows.forEach(r => {
     const badge = r.UTELEFONO_ESTADO === 'OK' ? 'badge-ok' : r.UTELEFONO_ESTADO === 'LEVE' ? 'badge-leve' : 'badge-rechazar';
     const final = r.UTELEFONO_FINAL || '';
+    const tipoCell = hayTipo
+      ? `<td><span class="badge" style="background:${r._tipoGestion === 'PH' ? '#7c3aed' : '#0891b2'};color:#fff;">${r._tipoGestion || '-'}</span></td>`
+      : '';
     html += `<tr>
-      <td>${r._idx}</td><td>${r.UDOMINIO}</td><td>${r.UAPEYNOM}</td><td>${r.ULOCALIDAD}</td>
+      <td>${r._idx}</td><td>${r.UDOMINIO}</td>${tipoCell}<td>${r.UAPEYNOM}</td><td>${r.ULOCALIDAD}</td>
       <td style="font-family:monospace;">${r.UTELEFONO_ORIGINAL}</td>
       <td style="font-family:monospace;">${r.UTELEFONO_SUGERENCIA}</td>
       <td><input type="text" class="phone-input${final !== r.UTELEFONO_SUGERENCIA && final ? ' modified' : ''}" value="${final}" data-idx="${r._idx}" onchange="editarTelefono(this)"></td>
@@ -1595,6 +1706,8 @@ cargarConfig();
 // Al abrir siempre mostrar la pantalla de archivos (sin auto-cargar período)
 switchTab('upload');
 cargarPeriodos();
+initBaseImport();
+cargarPeriodosBase();
 </script>
 </body>
 </html>

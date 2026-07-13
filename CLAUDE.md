@@ -295,11 +295,36 @@ COMUNICACIONES_HUB_URL=https://n8n.srv803796.hstgr.cloud/webhook/comunicaciones
 
 ---
 
+## Importación desde base (InfoSys) — agregado 2026-07-13
+
+Alternativa al upload de CSV: traer los registros directo de `nova_operaciones` (feed de InfoSys en `enargas_data`), eligiendo mes de vencimiento. **El upload de CSV sigue activo** como respaldo.
+
+### Fuente de datos
+- Tabla: `nova_operaciones` (DB `enargas_data`, misma conexión `poolEnargas`). **Es de lectura** — la tabla y su sync los mantiene el proyecto **Enargas Scrap**, no sistema-obleas.
+- Cada fila trae `datos_raw` (jsonb) con los mismos campos U* de la vieja megatabla CSV (UDOMINIO, UOBLEANEW, UTELEFONO, UAPEYNOM, TCODTAL, UFECVENHAB, etc.).
+- Dos fuentes con **dos formatos de fecha** en `UFECVENHAB`: `infosys_sql` (ISO `YYYY-MM-DD`) y `csv` (`DD/MM/YYYY`). El SQL normaliza ambos (`SQL_VENC_EXPR` en server.js).
+- Talleres Nova: `NOVA_TALLERES = ['HIT0797','IRT0550','QUT0856','QUT0865']`. GNCOBS3 siempre vacío en esta tabla.
+
+### Endpoints (server.js)
+```
+GET /api/base/periodos                          → meses disponibles + conteo {total, obleas, ph}
+GET /api/base/importar?mes=YYYY-MM&tipo=todos|oblea|ph
+    → mismo shape que /api/procesar (registros, métricas, archivos)
+    → dedup DISTINCT ON (patente) por fecha_operacion desc; procesa con procesarRows(rows,{yaFiltrado:true})
+```
+`procesar.js` expone `procesarRows(rows, opts)` (núcleo compartido CSV/base) y `normalizarLocalidad`. `mapRegistro()` en server.js da forma al registro para ambos paths.
+
+### Oblea vs PH — flag MOSTRAR_PH
+- Clasificación: `UCODGEST='X'` (Revisión CRPC) = **PH**; el resto = **oblea**.
+- **Importante:** InfoSys **todavía NO manda el detalle real de cilindros/PH** (CUPH*/CIL*/REG* vienen en 0). Ver encargo **ES-12** en Enargas Scrap (bloqueado esperando a Sebastián Fanitini).
+- Por eso el frontend tiene `const MOSTRAR_PH = false` en `public/index.html`: hoy trae **todo como obleas** (oculta el selector de tipo y la columna PH). El backend igual calcula `_tipoGestion` (queda listo).
+- **Cuando ES-12 se complete** (InfoSys manda CUPH*) → poner `MOSTRAR_PH = true` y se activa la separación obleas/PH real. Alternativa sin esperar: PH está en `historial_obleas_datos.datos->cilindros[].fecha_crpc` (scan ENARGAS).
+
 ## Pendientes conocidos
 
 1. **QUT0856 en talleresPropios de verificar.js** — el archivo `lib/verificar.js` (modo legacy) solo tiene IRT0550 y HIT0797. Si se vuelve a usar ese modo, agregar QUT0856.
 2. **Guía de uso para Yhonny** — documento operativo paso a paso
-3. **Importar datos desde enargas_data** — mostrar meses disponibles para seleccionar en vez de subir CSV manual
+3. ~~**Importar datos desde enargas_data**~~ ✅ HECHO 2026-07-13 — ver sección "Importación desde base (InfoSys)" arriba. Falta el split obleas/PH real (depende de ES-12 en Enargas Scrap).
 4. **Importación automática a ManyChat** — post-limpieza de teléfonos, Yhonny solo hace el broadcast
 5. **Sincronizar estructura local ↔ S18** — evaluar unificar con deploy script o action de GitHub
 

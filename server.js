@@ -5,7 +5,7 @@ const path = require('path');
 const crypto = require('crypto');
 const fs = require('fs');
 const { Pool } = require('pg');
-const { procesarCompleto } = require('./lib/procesar');
+const { procesarCompleto, procesarRows, normalizarLocalidad } = require('./lib/procesar');
 const { clasificarPatente, consultarPatente } = require('./lib/verificar');
 const { guardarPeriodo, leerPeriodo, listarPeriodos, eliminarPeriodo, generarHistorial } = require('./lib/storage');
 
@@ -96,6 +96,37 @@ async function enriquecerObleas(normalizados) {
     // No bloqueante: si falla, continúa sin el enriquecimiento
   }
   return normalizados;
+}
+
+// Talleres propios de Nova (GP5 + Sorvicor) — usados para acotar la importación desde base
+const NOVA_TALLERES = ['HIT0797', 'IRT0550', 'QUT0856', 'QUT0865'];
+
+// Normaliza UFECVENHAB de nova_operaciones (dos fuentes: ISO 'YYYY-MM-DD...' o CSV 'DD/MM/YYYY')
+// a un objeto Date. La conversión SQL ya se hace en la query; esto es defensivo.
+const SQL_VENC_EXPR = `
+  CASE
+    WHEN datos_raw->>'UFECVENHAB' ~ '^\\d{4}-\\d{2}-\\d{2}' THEN (left(datos_raw->>'UFECVENHAB',10))::date
+    WHEN datos_raw->>'UFECVENHAB' ~ '^\\d{1,2}/\\d{1,2}/\\d{4}$' THEN to_date(datos_raw->>'UFECVENHAB','DD/MM/YYYY')
+    ELSE NULL
+  END`;
+
+// Da forma al registro que consume el frontend (mismo shape para CSV y para base)
+function mapRegistro(r) {
+  return {
+    _idx: r._idx,
+    UDOMINIO: r.UDOMINIO, UAPEYNOM: r.UAPEYNOM, ULOCALIDAD: r.ULOCALIDAD,
+    UPROVINCIA: r.UPROVINCIA, GNCOBS1: r.GNCOBS1, TCODTAL: r.TCODTAL,
+    UFECVENHAB: r.UFECVENHAB, UTELEFONO_ORIGINAL: r.UTELEFONO_ORIGINAL,
+    UTELEFONO_SUGERENCIA: r.UTELEFONO_SUGERENCIA, UTELEFONO_FINAL: r.UTELEFONO_FINAL,
+    UTELEFONO_WHATSAPP: r.UTELEFONO_WHATSAPP, UTELEFONO_ESTADO: r.UTELEFONO_ESTADO,
+    _errorTipo: r._errorTipo, _errorDesc: r._errorDesc,
+    UMARCA: r.UMARCA, UMODELO: r.UMODELO, UANO: r.UANO,
+    UCALLEYNRO: r.UCALLEYNRO, UCODPOSTAL: r.UCODPOSTAL,
+    UTIPDOC: r.UTIPDOC, UNRODOC: r.UNRODOC, GNCOBS3: r.GNCOBS3,
+    UTELEFONO: r.UTELEFONO, UTELEFONO_ERROR: r.UTELEFONO_ERROR,
+    UOBLEANEW: r.UOBLEANEW, UOBLEAANT: r.UOBLEAANT,
+    _tipoGestion: r._tipoGestion
+  };
 }
 
 // Sesiones en memoria: token → { ts, nombre, email, metodo }
@@ -289,20 +320,7 @@ app.post('/api/procesar', upload.single('archivo'), async (req, res) => {
       metricasFiltrado: resultado.metricasFiltrado,
       normalizacion: resultado.normalizacion,
       archivos: resultado.archivos.map(a => ({ name: a.name, records: a.records, period: a.period, version: a.version, estados: a.estados })),
-      registros: resultado.normalizados.map(r => ({
-        _idx: r._idx,
-        UDOMINIO: r.UDOMINIO, UAPEYNOM: r.UAPEYNOM, ULOCALIDAD: r.ULOCALIDAD,
-        UPROVINCIA: r.UPROVINCIA, GNCOBS1: r.GNCOBS1, TCODTAL: r.TCODTAL,
-        UFECVENHAB: r.UFECVENHAB, UTELEFONO_ORIGINAL: r.UTELEFONO_ORIGINAL,
-        UTELEFONO_SUGERENCIA: r.UTELEFONO_SUGERENCIA, UTELEFONO_FINAL: r.UTELEFONO_FINAL,
-        UTELEFONO_WHATSAPP: r.UTELEFONO_WHATSAPP, UTELEFONO_ESTADO: r.UTELEFONO_ESTADO,
-        _errorTipo: r._errorTipo, _errorDesc: r._errorDesc,
-        UMARCA: r.UMARCA, UMODELO: r.UMODELO, UANO: r.UANO,
-        UCALLEYNRO: r.UCALLEYNRO, UCODPOSTAL: r.UCODPOSTAL,
-        UTIPDOC: r.UTIPDOC, UNRODOC: r.UNRODOC, GNCOBS3: r.GNCOBS3,
-        UTELEFONO: r.UTELEFONO, UTELEFONO_ERROR: r.UTELEFONO_ERROR,
-        UOBLEANEW: r.UOBLEANEW, UOBLEAANT: r.UOBLEAANT
-      }))
+      registros: resultado.normalizados.map(mapRegistro)
     });
   } catch (e) {
     console.error('Error procesando:', e);
@@ -517,6 +535,128 @@ app.get('/api/informe-obleas/serie', async (req, res) => {
     const data = await resp.json();
     res.status(resp.status).json(data);
   } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ============================================================
+// IMPORTACIÓN DESDE BASE (nova_operaciones / InfoSys)
+// ============================================================
+
+// Meses disponibles (por vencimiento) con conteo de obleas vs PH — para el selector
+app.get('/api/base/periodos', async (req, res) => {
+  try {
+    const q = `
+      WITH base AS (
+        SELECT datos_raw->>'UCODGEST' AS cod, ${SQL_VENC_EXPR} AS venc
+        FROM nova_operaciones
+        WHERE taller_codigo = ANY($1)
+      )
+      SELECT to_char(venc,'YYYY-MM') AS mes,
+             count(*)::int AS total,
+             count(*) FILTER (WHERE cod = 'X')::int AS ph,
+             count(*) FILTER (WHERE cod IS DISTINCT FROM 'X')::int AS obleas
+      FROM base
+      WHERE venc IS NOT NULL
+      GROUP BY 1
+      ORDER BY 1 DESC`;
+    const r = await poolEnargas.query(q, [NOVA_TALLERES]);
+    res.json({ ok: true, periodos: r.rows });
+  } catch (e) {
+    console.error('[base/periodos] error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Trae los registros de talleres Nova que vencen en el mes dado, ya procesados
+// con la misma tubería del CSV. tipo: todos | oblea | ph
+app.get('/api/base/importar', async (req, res) => {
+  try {
+    const mes = String(req.query.mes || '');
+    const tipo = String(req.query.tipo || 'todos').toLowerCase();
+    if (!/^\d{4}-\d{2}$/.test(mes)) return res.status(400).json({ error: 'Parámetro "mes" inválido (formato YYYY-MM)' });
+
+    const [y, m] = mes.split('-').map(Number);
+    const desde = `${y}-${String(m).padStart(2, '0')}-01`;
+    const hastaY = m === 12 ? y + 1 : y;
+    const hastaM = m === 12 ? 1 : m + 1;
+    const hasta = `${hastaY}-${String(hastaM).padStart(2, '0')}-01`;
+
+    const q = `
+      WITH base AS (
+        SELECT patente, oblea_nueva, oblea_anterior, marca, modelo, ano, titular_nombre,
+               titular_doc, titular_tel, direccion, localidad, provincia, taller_codigo,
+               fecha_operacion, importado_en, datos_raw,
+               datos_raw->>'UCODGEST' AS cod, ${SQL_VENC_EXPR} AS venc
+        FROM nova_operaciones
+        WHERE taller_codigo = ANY($1)
+      ),
+      enmes AS (
+        SELECT * FROM base WHERE venc >= $2::date AND venc < $3::date
+      )
+      SELECT DISTINCT ON (patente) *
+      FROM enmes
+      ORDER BY patente, fecha_operacion DESC NULLS LAST, importado_en DESC NULLS LAST`;
+    const r = await poolEnargas.query(q, [NOVA_TALLERES, desde, hasta]);
+
+    // DB → shape de fila CSV (objetos U*)
+    const rows = r.rows.map(row => {
+      const d = row.datos_raw || {};
+      const esPH = row.cod === 'X';
+      const v = row.venc ? new Date(row.venc) : null;
+      const fmtFecha = v ? `${v.getUTCDate()}/${v.getUTCMonth() + 1}/${v.getUTCFullYear()}` : '';
+      return {
+        UFECVENHAB: fmtFecha,
+        UDOMINIO: d.UDOMINIO || row.patente || '',
+        UOBLEANEW: d.UOBLEANEW || row.oblea_nueva || '',
+        UOBLEAANT: d.UOBLEAANT || row.oblea_anterior || '',
+        UMARCA: d.UMARCA || row.marca || '',
+        UMODELO: d.UMODELO || row.modelo || '',
+        UANO: d.UANO || (row.ano != null ? String(row.ano) : ''),
+        UAPEYNOM: d.UAPEYNOM || row.titular_nombre || '',
+        UCALLEYNRO: d.UCALLEYNRO || row.direccion || '',
+        ULOCALIDAD: normalizarLocalidad(d.ULOCALIDAD || row.localidad || ''),
+        UPROVINCIA: normalizarLocalidad(d.UPROVINCIA || row.provincia || ''),
+        UCODPOSTAL: d.UCODPOSTAL || '',
+        UTELEFONO: d.UTELEFONO || row.titular_tel || '',
+        UTIPDOC: d.UTIPDOC || '',
+        UNRODOC: d.UNRODOC || row.titular_doc || '',
+        GNCOBS3: d.GNCOBS3 || '',
+        TCODTAL: d.TCODTAL || row.taller_codigo || '',
+        GNCOBS1: d.GNCOBS1 || d.subtaller_nombre || row.taller_codigo || '',
+        _tipoGestion: esPH ? 'PH' : 'OBLEA'
+      };
+    });
+
+    const conteo = {
+      total: rows.length,
+      obleas: rows.filter(x => x._tipoGestion === 'OBLEA').length,
+      ph: rows.filter(x => x._tipoGestion === 'PH').length
+    };
+
+    let seleccion = rows;
+    if (tipo === 'oblea') seleccion = rows.filter(x => x._tipoGestion === 'OBLEA');
+    else if (tipo === 'ph') seleccion = rows.filter(x => x._tipoGestion === 'PH');
+
+    const resultado = procesarRows(seleccion, { yaFiltrado: true });
+
+    res.json({
+      ok: true,
+      fuente: 'infosys',
+      mes,
+      tipo,
+      conteo,
+      periodo: resultado.periodo,
+      totalOriginal: resultado.totalOriginal,
+      totalFiltrado: resultado.totalFiltrado,
+      metricasOriginal: resultado.metricasOriginal,
+      metricasFiltrado: resultado.metricasFiltrado,
+      normalizacion: resultado.normalizacion,
+      archivos: resultado.archivos.map(a => ({ name: a.name, records: a.records, period: a.period, version: a.version, estados: a.estados })),
+      registros: resultado.normalizados.map(mapRegistro)
+    });
+  } catch (e) {
+    console.error('[base/importar] error:', e);
     res.status(500).json({ error: e.message });
   }
 });

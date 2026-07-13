@@ -1,5 +1,19 @@
 # Pendientes — sistema-obleas
 
+## Sesión 2026-07-13
+
+### Implementado — Importación desde base (InfoSys)
+- Nueva sección **"🗓️ Traer desde InfoSys"** en la pestaña Archivos: selector de mes de vencimiento (default = mes actual) → trae obleas de talleres Nova desde `nova_operaciones` sin subir CSV. Upload de CSV intacto como respaldo.
+- Endpoints nuevos: `GET /api/base/periodos` y `GET /api/base/importar?mes=&tipo=`. Reusan el mismo pipeline y render que el CSV (`procesarRows` en procesar.js).
+- Deployado a S18 y verificado end-to-end (jul-2026 → 1522 registros). Backup en S18 `_deploy_backups/`.
+
+### Estado obleas/PH
+- Se muestra **todo como obleas** (flag `MOSTRAR_PH=false` en index.html). El split obleas/PH ya está programado pero apagado.
+- **Bloqueado por ES-12 (Enargas Scrap):** InfoSys todavía no manda los campos de cilindro/PH (CUPH*). Cuando ES-12 cierre → prender `MOSTRAR_PH=true`.
+
+### Próximo paso concreto
+- Esperar respuesta de Sebastián Fanitini (InfoSys) con los campos de cilindro/PH. Al llegar y cargarse vía ES-12, activar el flag y verificar el split obleas/PH.
+
 ## Sesión 2026-05-14
 
 ### Implementado
