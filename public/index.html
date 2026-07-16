@@ -1023,7 +1023,7 @@ async function iniciarVerificacion() {
   if (!STATE.registros.length) { alert('Primero procesá un archivo.'); return; }
 
   const registros = STATE.registros.filter(r => r.UDOMINIO);
-  const nombre = periodoNombreLegible(STATE.periodo);
+  let nombre = periodoNombreLegible(STATE.periodo);
   const patentes = registros.map(r => {
     const item = { patente: r.UDOMINIO };
     if (r.UOBLEANEW) item.oblea = parseInt(r.UOBLEANEW);
@@ -1059,7 +1059,29 @@ async function iniciarVerificacion() {
           body: JSON.stringify({ nombre, patentes, force: true })
         });
         data = await resp.json();
-        if (!resp.ok || data.error) { alert('Error: ' + (data.error || 'Error al crear job')); return; }
+        if (!resp.ok || data.error) {
+          // El job anterior quedó trabado en "procesando" y dalegas ni con force lo sobreescribe
+          // (bug conocido del backend, encargo ES-15). Escape: correr bajo un nombre único que no choque.
+          const msg2 = String(data.error || '');
+          const sigueTrabado = resp.status === 409 || resp.status === 400
+            || msg2.toLowerCase().includes('ya existe') || msg2.toLowerCase().includes('conflict');
+          if (!sigueTrabado) { alert('Error: ' + (data.error || 'Error al crear job')); return; }
+          const relanzar = confirm(
+            `El job anterior de "${nombre}" quedó TRABADO en el servidor y no se puede sobreescribir ` +
+            `(bug del backend de dalegas, ya reportado).\n\n` +
+            `Aceptar → correr una verificación NUEVA con nombre único (esquiva el trabado y arranca de cero).\n` +
+            `Cancelar → no hacer nada.`
+          );
+          if (!relanzar) return;
+          nombre = `${nombre} v${nuevoSufijoJob()}`;
+          resp = await authFetch('/api/lote', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ nombre, patentes, force: true })
+          });
+          data = await resp.json();
+          if (!resp.ok || data.error) { alert('No se pudo crear el job nuevo: ' + (data.error || ('HTTP ' + resp.status))); return; }
+          agregarLogVerif('warn', `Job anterior trabado → corriendo bajo nombre único: "${nombre}"`);
+        }
       } else {
         alert('Error: ' + (data.error || 'Error al crear job'));
         return;
@@ -1142,6 +1164,13 @@ function slugifyJob(s) {
   return (s || '').toString().toLowerCase()
     .normalize('NFD').replace(/[̀-ͯ]/g, '')  // quitar acentos
     .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+// Sufijo corto y único (fecha+hora+min) para relanzar un período cuyo job canónico quedó trabado.
+function nuevoSufijoJob() {
+  const d = new Date();
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`;
 }
 
 // Adjunta a un job de verificación ya existente y muestra sus resultados SIN re-analizar.
