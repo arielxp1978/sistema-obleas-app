@@ -158,7 +158,7 @@ input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 2px rg
   <div class="tab" data-tab="original">Original</div>
   <div class="tab" data-tab="filtrado">Filtrado</div>
   <div class="tab" data-tab="telefonos">Revisar Teléfonos</div>
-  <div class="tab" data-tab="ranking">Ranking Usuarios</div>
+  <div class="tab" data-tab="ranking">Ranking Comisionistas</div>
   <div class="tab" data-tab="archivos">Descargar Archivos</div>
   <div class="tab" data-tab="verificacion">Verificación Post-Envío</div>
   <div class="tab" data-tab="reporte">Reporte PDF</div>
@@ -218,10 +218,10 @@ input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 2px rg
   </div>
   <div class="charts-row" style="margin-top:16px;">
     <div class="chart-card-dark"><h3><span class="chart-icon">🏢</span>Distribución por Comisionista (PEC)</h3><div class="chart-small"><canvas id="chartPecOrig"></canvas></div></div>
-    <div class="chart-card-dark"><h3><span class="chart-icon">👥</span>% Error por Usuario</h3><div id="hbarUsersError" class="hbar-wrap" style="max-height:200px;overflow-y:auto;"></div></div>
+    <div class="chart-card-dark"><h3><span class="chart-icon">👥</span>% Error por Comisionista</h3><div id="hbarUsersError" class="hbar-wrap" style="max-height:200px;overflow-y:auto;"></div></div>
   </div>
   <div class="card" style="margin-top:16px;">
-    <h3>Detalle por Usuario (GNCOBS1)</h3>
+    <h3>Detalle por Comisionista/Canal</h3>
     <div class="table-wrap" id="tablaUsuariosOrig"></div>
   </div>
 </div>
@@ -243,7 +243,7 @@ input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 2px rg
     <div class="chart-card-dark"><h3><span class="chart-icon">🏙️</span>Top 15 Localidades</h3><div id="hbarLocalidades" class="hbar-wrap"></div></div>
   </div>
   <div class="card" style="margin-top:16px;">
-    <h3>Detalle por Usuario (GNCOBS1)</h3>
+    <h3>Detalle por Comisionista/Canal</h3>
     <div class="table-wrap" id="tablaUsuariosFilt"></div>
   </div>
 </div>
@@ -260,7 +260,7 @@ input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 2px rg
           <option value="RECHAZAR">Solo rechazados</option>
           <option value="OK">Solo OK</option>
         </select>
-        <select id="filtroUsuario"><option value="">Todos los usuarios</option></select>
+        <select id="filtroUsuario"><option value="">Todos los comisionistas</option></select>
         <span id="contadorTel" style="font-size:.85em;color:var(--text-sec);"></span>
       </div>
     </div>
@@ -276,7 +276,7 @@ input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 2px rg
 <!-- ==================== RANKING USUARIOS ==================== -->
 <div class="tab-content" id="tc-ranking">
   <div class="card">
-    <h3>Ranking de Usuarios por % de Error en Teléfonos</h3>
+    <h3>Ranking de Comisionistas por % de Error en Teléfonos</h3>
     <div class="table-wrap" id="tablaRanking"></div>
   </div>
   <div class="card">
@@ -705,6 +705,11 @@ const DATALABELS_OPTS = {
   color: '#fff', font: { size: 11, weight: 'bold' }, textAlign: 'center'
 };
 
+// Nombre del taller al lado del código en los gráficos.
+const TALLER_NOMBRES = { 'IRT0550': 'Nova Gral Paz', 'HIT0797': 'Nova R20', 'QUT0867': 'Grupo P5' };
+function tallerLabel(code) { return TALLER_NOMBRES[code] ? `${code} · ${TALLER_NOMBRES[code]}` : code; }
+function labelsTaller(obj) { return Object.keys(obj).map(tallerLabel); }
+
 function renderChartOriginal() {
   if (!STATE.metricasOriginal) return;
   const m = STATE.metricasOriginal;
@@ -712,7 +717,7 @@ function renderChartOriginal() {
   const ctxT = document.getElementById('chartTcodtalOrig');
   if (ctxT) charts.tcodtalOrig = new Chart(ctxT, {
     type: 'doughnut',
-    data: { labels: Object.keys(m.por_tcodtal), datasets: [{ data: Object.values(m.por_tcodtal), backgroundColor: PALETTE, borderColor: '#1a1d2e', borderWidth: 3, hoverOffset: 10 }] },
+    data: { labels: labelsTaller(m.por_tcodtal), datasets: [{ data: Object.values(m.por_tcodtal), backgroundColor: PALETTE, borderColor: '#1a1d2e', borderWidth: 3, hoverOffset: 10 }] },
     options: { responsive: true, cutout: '65%', animation: { animateRotate: true, duration: 900 }, plugins: { legend: { display: false }, datalabels: DATALABELS_DARK } },
     plugins: [ChartDataLabels]
   });
@@ -772,7 +777,7 @@ function renderChartFiltrado() {
   const ctxT = document.getElementById('chartTcodtalFilt');
   if (ctxT) charts.tcodtalFilt = new Chart(ctxT, {
     type: 'doughnut',
-    data: { labels: Object.keys(m.por_tcodtal), datasets: [{ data: Object.values(m.por_tcodtal), backgroundColor: PALETTE, borderColor: '#1a1d2e', borderWidth: 3, hoverOffset: 10 }] },
+    data: { labels: labelsTaller(m.por_tcodtal), datasets: [{ data: Object.values(m.por_tcodtal), backgroundColor: PALETTE, borderColor: '#1a1d2e', borderWidth: 3, hoverOffset: 10 }] },
     options: { responsive: true, cutout: '65%', animation: { animateRotate: true, duration: 900 }, plugins: { legend: { display: false }, datalabels: DATALABELS_DARK } },
     plugins: [ChartDataLabels]
   });
@@ -821,7 +826,7 @@ function renderChartProvinciasLocalidades() {
 function renderUsuarios(containerId, metrics) {
   if (!metrics) return;
   const users = metrics.por_usuario;
-  let html = '<table><thead><tr><th>Usuario</th><th>Total</th><th>OK</th><th>Mal</th><th>Sin</th><th>% Error</th></tr></thead><tbody>';
+  let html = '<table><thead><tr><th>Comisionista</th><th>Total</th><th>OK</th><th>Mal</th><th>Sin</th><th>% Error</th></tr></thead><tbody>';
   Object.entries(users).forEach(([u, d]) => {
     const pct = d.pct_err || 0;
     const color = pct > 50 ? 'var(--danger)' : pct > 20 ? 'var(--warning)' : 'var(--success)';
@@ -838,16 +843,16 @@ function renderTelefonos() {
   const filtro = document.getElementById('filtroEstado').value;
   const usuario = document.getElementById('filtroUsuario').value;
 
-  // Populate user filter
+  // Populate comisionista/canal filter
   const sel = document.getElementById('filtroUsuario');
   if (sel.options.length <= 1) {
-    const users = new Set(STATE.registros.map(r => r.GNCOBS1));
-    [...users].sort().forEach(u => { if (u) { const o = document.createElement('option'); o.value = u; o.text = u; sel.add(o); } });
+    const canales = new Set(STATE.registros.map(r => r._canal));
+    [...canales].sort().forEach(u => { if (u) { const o = document.createElement('option'); o.value = u; o.text = u; sel.add(o); } });
   }
 
   let rows = STATE.registros;
   if (filtro !== 'TODOS') rows = rows.filter(r => r.UTELEFONO_ESTADO === filtro);
-  if (usuario) rows = rows.filter(r => r.GNCOBS1 === usuario);
+  if (usuario) rows = rows.filter(r => r._canal === usuario);
 
   document.getElementById('contadorTel').textContent = `${rows.length} registros`;
 
@@ -899,7 +904,7 @@ function renderRanking() {
   const users = STATE.metricasFiltrado.por_usuario;
   const entries = Object.entries(users).sort((a, b) => b[1].pct_err - a[1].pct_err);
 
-  let html = '<table><thead><tr><th>#</th><th>Usuario</th><th>Total</th><th>OK</th><th>Mal</th><th>Sin</th><th>% Error</th><th>TCODTALs</th></tr></thead><tbody>';
+  let html = '<table><thead><tr><th>#</th><th>Comisionista</th><th>Total</th><th>OK</th><th>Mal</th><th>Sin</th><th>% Error</th><th>TCODTALs</th></tr></thead><tbody>';
   entries.forEach(([u, d], i) => {
     const pct = d.pct_err || 0;
     const color = pct > 50 ? 'var(--danger)' : pct > 20 ? 'var(--warning)' : 'var(--success)';

@@ -5,7 +5,7 @@ const path = require('path');
 const crypto = require('crypto');
 const fs = require('fs');
 const { Pool } = require('pg');
-const { procesarCompleto, procesarRows, normalizarLocalidad, parseCSV, dividirArchivos } = require('./lib/procesar');
+const { procesarCompleto, procesarRows, normalizarLocalidad, parseCSV, dividirArchivos, canalLabel } = require('./lib/procesar');
 
 // Las megatablas de ENARGAS/InfoSys vienen en latin-1 (ISO-8859). Si se leen como utf8 se
 // corrompen ñ/tildes en nombres. Detectamos: si al decodificar utf8 aparece el carácter de
@@ -133,7 +133,8 @@ function mapRegistro(r) {
     UTIPDOC: r.UTIPDOC, UNRODOC: r.UNRODOC, GNCOBS3: r.GNCOBS3,
     UTELEFONO: r.UTELEFONO, UTELEFONO_ERROR: r.UTELEFONO_ERROR,
     UOBLEANEW: r.UOBLEANEW, UOBLEAANT: r.UOBLEAANT,
-    _tipoGestion: r._tipoGestion
+    _tipoGestion: r._tipoGestion,
+    SUBTAL: r.SUBTAL, _canal: canalLabel(r.SUBTAL)
   };
 }
 
