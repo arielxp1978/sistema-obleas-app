@@ -5,7 +5,15 @@ const path = require('path');
 const crypto = require('crypto');
 const fs = require('fs');
 const { Pool } = require('pg');
-const { procesarCompleto, procesarRows, normalizarLocalidad } = require('./lib/procesar');
+const { procesarCompleto, procesarRows, normalizarLocalidad, parseCSV, dividirArchivos } = require('./lib/procesar');
+
+// Las megatablas de ENARGAS/InfoSys vienen en latin-1 (ISO-8859). Si se leen como utf8 se
+// corrompen ñ/tildes en nombres. Detectamos: si al decodificar utf8 aparece el carácter de
+// reemplazo, era latin-1.
+function decodeCsv(buf) {
+  const utf8 = buf.toString('utf8');
+  return utf8.includes('�') ? buf.toString('latin1') : utf8;
+}
 const { clasificarPatente, consultarPatente } = require('./lib/verificar');
 const { guardarPeriodo, leerPeriodo, listarPeriodos, eliminarPeriodo, generarHistorial } = require('./lib/storage');
 
@@ -301,12 +309,22 @@ app.use(express.static(path.join(__dirname, 'public')));
 // PROCESAMIENTO
 // ============================================================
 
-// Subir y procesar CSV
-app.post('/api/procesar', upload.single('archivo'), async (req, res) => {
+// Metadata de archivo para el frontend (sin el content pesado; incluye tipo y preview)
+function archivoMeta(a) {
+  return { name: a.name, tipo: a.tipo, records: a.records, period: a.period, version: a.version, preview: a.preview };
+}
+
+// Subir y procesar CSV(s). Acepta UNO o VARIOS archivos (Sorvicor + Gp5) → se unen en un período.
+app.post('/api/procesar', upload.array('archivos', 10), async (req, res) => {
   try {
-    if (!req.file) return res.status(400).json({ error: 'No se envió archivo' });
-    const text = req.file.buffer.toString('utf8');
-    const resultado = procesarCompleto(text);
+    const files = req.files || [];
+    if (!files.length) return res.status(400).json({ error: 'No se envió ningún archivo' });
+    // parsear cada archivo (latin-1) y concatenar filas
+    const rows = [];
+    for (const f of files) rows.push(...parseCSV(decodeCsv(f.buffer)));
+
+    const porArchivo = parseInt(req.body.porArchivo) || 50;
+    const resultado = procesarRows(rows, { porArchivo });
 
     // Enriquecer UOBLEANEW desde enargas_data para registros que no lo traen en el CSV
     await enriquecerObleas(resultado.normalizados);
@@ -320,7 +338,9 @@ app.post('/api/procesar', upload.single('archivo'), async (req, res) => {
       metricasFiltrado: resultado.metricasFiltrado,
       normalizacion: resultado.normalizacion,
       excluidosComisionista: resultado.excluidosComisionista,
-      archivos: resultado.archivos.map(a => ({ name: a.name, records: a.records, period: a.period, version: a.version, estados: a.estados })),
+      resumenTipo: resultado.resumenTipo,
+      archivosCargados: files.map(f => f.originalname),
+      archivos: resultado.archivos.map(archivoMeta),
       registros: resultado.normalizados.map(mapRegistro)
     });
   } catch (e) {
@@ -329,12 +349,11 @@ app.post('/api/procesar', upload.single('archivo'), async (req, res) => {
   }
 });
 
-// Generar archivos CSV (con ediciones del operador)
+// Regenerar archivos (con ediciones del operador y/o nueva cantidad por archivo)
 app.post('/api/generar-archivos', (req, res) => {
   try {
-    const { registros } = req.body;
-    const { dividirArchivos } = require('./lib/procesar');
-    const archivos = dividirArchivos(registros);
+    const { registros, porArchivo } = req.body;
+    const archivos = dividirArchivos(registros, { porArchivo });
     res.json({ ok: true, archivos });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -653,7 +672,8 @@ app.get('/api/base/importar', async (req, res) => {
       metricasOriginal: resultado.metricasOriginal,
       metricasFiltrado: resultado.metricasFiltrado,
       normalizacion: resultado.normalizacion,
-      archivos: resultado.archivos.map(a => ({ name: a.name, records: a.records, period: a.period, version: a.version, estados: a.estados })),
+      resumenTipo: resultado.resumenTipo,
+      archivos: resultado.archivos.map(archivoMeta),
       registros: resultado.normalizados.map(mapRegistro)
     });
   } catch (e) {
