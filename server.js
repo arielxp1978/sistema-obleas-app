@@ -134,7 +134,7 @@ function mapRegistro(r) {
     UTELEFONO: r.UTELEFONO, UTELEFONO_ERROR: r.UTELEFONO_ERROR,
     UOBLEANEW: r.UOBLEANEW, UOBLEAANT: r.UOBLEAANT,
     _tipoGestion: r._tipoGestion,
-    SUBTAL: r.SUBTAL, _canal: canalLabel(r.SUBTAL)
+    SUBTAL: r.SUBTAL
   };
 }
 
