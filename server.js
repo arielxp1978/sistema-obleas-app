@@ -319,6 +319,7 @@ app.post('/api/procesar', upload.single('archivo'), async (req, res) => {
       metricasOriginal: resultado.metricasOriginal,
       metricasFiltrado: resultado.metricasFiltrado,
       normalizacion: resultado.normalizacion,
+      excluidosComisionista: resultado.excluidosComisionista,
       archivos: resultado.archivos.map(a => ({ name: a.name, records: a.records, period: a.period, version: a.version, estados: a.estados })),
       registros: resultado.normalizados.map(mapRegistro)
     });

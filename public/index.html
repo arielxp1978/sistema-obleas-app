@@ -517,6 +517,7 @@ async function procesarArchivo(file) {
     STATE.archivos = data.archivos;
     STATE.totalOriginal = data.totalOriginal;
     STATE.totalFiltrado = data.totalFiltrado;
+    STATE.excluidosComisionista = data.excluidosComisionista || null;
 
     document.getElementById('btnGuardar').classList.remove('hidden');
     STATE.sinGuardar = true;
@@ -913,6 +914,18 @@ function renderArchivos() {
   const c = document.getElementById('listaArchivos');
   if (!STATE.archivos.length) { c.innerHTML = '<p style="color:var(--text-sec)">No hay archivos generados.</p>'; return; }
   let html = '';
+  // Aviso de comisionistas externos excluidos (no van al broadcast de ManyChat)
+  const exc = STATE.excluidosComisionista;
+  if (exc && exc.total > 0) {
+    const detalle = Object.entries(exc.porComisionista)
+      .sort((a, b) => b[1] - a[1])
+      .map(([k, v]) => `${k}: ${v}`).join(' · ');
+    html += `<div class="alert" style="background:rgba(251,188,4,.12);border:1px solid rgba(251,188,4,.4);border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:.9em;">
+      🚫 <strong>${exc.total} obleas excluidas por comisionista externo</strong> (no entran a los archivos).<br>
+      <span style="color:var(--text-sec);">Por código: ${detalle}</span><br>
+      <span style="color:var(--text-sec);font-size:.9em;">Si alguno de estos códigos es NUESTRO, avisá para agregarlo al listado de comisionistas propios.</span>
+    </div>`;
+  }
   STATE.archivos.forEach((a, i) => {
     const est = Object.entries(a.estados || {}).map(([k,v]) => `<span class="badge badge-${k.toLowerCase() === 'ok' ? 'ok' : k.toLowerCase() === 'leve' ? 'leve' : 'rechazar'}">${k}: ${v}</span>`).join(' ');
     html += `<div class="file-card">
