@@ -1342,7 +1342,8 @@ async function reintentarFallidos() {
   if (!fallidos.length) return;
   if (!confirm(`¿Reintentar ${fallidos.length} consultas con error?`)) return;
 
-  const nombre = 'Reintento - ' + periodoNombreLegible(STATE.periodo);
+  // Nombre único por reintento → no choca con jobs previos aunque force sea false.
+  const nombre = 'Reintento ' + periodoNombreLegible(STATE.periodo) + ' v' + nuevoSufijoJob();
   const patentes = fallidos.map(r => {
     const item = { patente: r.registro.UDOMINIO };
     if (r.registro.UOBLEANEW) item.oblea = parseInt(r.registro.UOBLEANEW);
@@ -1356,9 +1357,12 @@ async function reintentarFallidos() {
   document.getElementById('verifStatus').textContent = `🔄 Enviando reintento de ${fallidos.length} patentes...`;
 
   try {
+    // force:false → las que YA tienen respuesta vuelven del cache al instante;
+    // solo las que nunca resolvieron (transitorios) se re-consultan a ENARGAS.
+    // Antes iba force:true y re-consultaba TODAS, machacando ENARGAS y disparando más transitorios.
     let resp = await authFetch('/api/lote', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ nombre, patentes, force: true })
+      body: JSON.stringify({ nombre, patentes, force: false })
     });
     let data = await resp.json();
     if (!resp.ok) { alert('Error: ' + (data.error || 'Error al crear job')); return; }
