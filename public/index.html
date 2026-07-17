@@ -169,10 +169,13 @@ input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 2px rg
 <!-- ==================== SUBIR ARCHIVO ==================== -->
   <div class="card">
     <h3>⬆️ Subir CSV de ENARGAS</h3>
+    <div class="alert" style="background:rgba(66,133,244,.1);border:1px solid rgba(66,133,244,.35);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:.88em;">
+      📍 <strong>De dónde sacar el archivo:</strong> en InfoSys → <strong>Listados → Vencimientos Usuarios</strong>, y exportá el CSV.
+    </div>
     <div class="upload-zone" id="uploadZone">
       <input type="file" id="fileInput" accept=".csv,.txt" multiple>
       <p style="font-size:1.1em;margin-bottom:8px;">Arrastrá o hacé clic para subir el/los CSV</p>
-      <p style="font-size:.85em;color:var(--text-sec);">Podés subir <strong>varios juntos</strong> (ej. Sorvicor + Gp5) — se unen en un solo período. CSV separado por punto y coma (;).</p>
+      <p style="font-size:.85em;color:var(--text-sec);">Podés subir <strong>varios juntos</strong> — se unen en un solo período. CSV separado por punto y coma (;).</p>
     </div>
     <div id="uploadProgress" class="hidden" style="margin-top:16px;">
       <div class="flex items-center gap-2 mb-2">
