@@ -52,19 +52,25 @@ El repo local tiene una carpeta `app/` intermedia que no existe en S18. En S18 e
 
 ### Protocolo correcto para deployar cambios
 
-**S18 NO puede hacer git pull desde GitHub (timeout). Usar siempre SCP:**
+**⚠️ CORREGIDO 2026-07-17:** el `docker-compose.yml` usa `build: .` y **copia el código dentro de la imagen** (solo monta `obleas-data:/app/data`). Por eso **`docker compose restart` NO alcanza para NINGÚN cambio de código — ni siquiera `index.html`.** La instrucción vieja que decía "index.html solo restart" era falsa: los scp quedaban en el disco del host pero el container seguía sirviendo el código viejo de la imagen. **SIEMPRE hay que rebuild.**
+
+**S18 puede acceder por Tailscale (100.72.42.104) o IP local (192.168.0.18, si estás en la red/VPN). El Tailscale a veces da timeout; la IP local con VPN Nova 1 conectada anda.**
+
 ```bash
-# Cambios en server.js:
-scp "/Users/arielpalomeque/Documents/App Creadas/sistema-obleas/app/server.js" \
-    akeneo@100.72.42.104:/home/akeneo/sistema-obleas-app/server.js
+# 1. scp de TODOS los archivos cambiados (backend Y frontend):
+scp "app/lib/procesar.js"      akeneo@192.168.0.18:/home/akeneo/sistema-obleas-app/lib/procesar.js
+scp "app/server.js"            akeneo@192.168.0.18:/home/akeneo/sistema-obleas-app/server.js
+scp "app/public/index.html"    akeneo@192.168.0.18:/home/akeneo/sistema-obleas-app/public/index.html
 
-# Cambios solo en index.html (no requiere rebuild, solo restart):
-scp "/Users/arielpalomeque/Documents/App Creadas/sistema-obleas/app/public/index.html" \
-    akeneo@100.72.42.104:/home/akeneo/sistema-obleas-app/public/index.html
-ssh akeneo@100.72.42.104 "cd /home/akeneo/sistema-obleas-app && docker compose restart obleas"
+# 2. SIEMPRE rebuild (restart no basta — el código se copia en la imagen):
+ssh akeneo@192.168.0.18 "cd /home/akeneo/sistema-obleas-app && docker compose down && docker compose up -d --build"
 
-# Cambios en server.js u otros archivos (requiere rebuild):
-ssh akeneo@100.72.42.104 "cd /home/akeneo/sistema-obleas-app && docker compose down && docker compose up -d --build"
+# 3. reconectar el tunnel (ver abajo) y verificar HTTP 200.
+```
+
+Para confirmar que el código nuevo quedó DENTRO del container (no solo en el host):
+```bash
+ssh akeneo@192.168.0.18 "docker exec sistema-obleas grep -c '<algo del cambio>' /app/lib/procesar.js"
 ```
 
 **Después de rebuild — reconectar el tunnel:**
@@ -284,12 +290,49 @@ Mantenida por compatibilidad pero no se usa en el flujo actual.
 
 ---
 
-## Filtro del CSV (procesar.js)
+## Formato del CSV + pipeline de export ManyChat (reescrito 2026-07-17)
 
-Solo se procesan registros donde:
-- `TCODTAL = HIT0797` (Nova GNC) — cualquier `GNCOBS3`
-- `TCODTAL = IRT0550` (Sorvicor) — solo si `GNCOBS3` está vacío
-- `TCODTAL = QUT0865` — taller externo asociado a Nova
+### El archivo correcto: reporte "Vencimientos Usuarios"
+El CSV que se sube se saca de **InfoSys → Listados → Vencimientos Usuarios** (exportar CSV).
+- **66 columnas**, encoding **latin-1** (ISO-8859), separador `;`, line endings CRLF.
+- Header: `Vino?;Oblea Entregada;...;GNCOBS1;GNCOBS2;GNCOBS3;...;TCODTAL;notas;email;celular;...` (ver muestra `../Full 202507.csv`).
+- Trae **dos capas**: técnica ENARGAS (oblea, fechas) + **comercial InfoSys** (vendedor `GNCOBS1`, comisionista `GNCOBS3`, teléfono).
+
+**OJO — hubo confusión de formatos (2026-07-17):** existe OTRO export de InfoSys de **144 columnas** con `SUBTAL` (comisionista) y sin `GNCOBS1`. NO es el que se usa para ManyChat. La app **tolera ambos** (ver `getComisionista`), pero el bueno es el de 66-col "Vencimientos Usuarios". El `Full.rar` que anduvo dando vueltas era una **concatenación de los dos** → daba "0 filtrados / sin nombre".
+
+### Encoding (server.js `decodeCsv`)
+Se lee latin-1 (si al decodificar utf8 aparece el carácter de reemplazo `�`, se usa latin1). Antes leía utf8 fijo y corrompía ñ/tildes en nombres.
+
+### Filtro: quedarse solo con lo NUESTRO (`procesar.js`)
+Una oblea es nuestra si es **taller nuestro Y comisionista nuestro** (las dos, con AND). CLAVE: un taller propio (ej. IRT0550) también hace obleas de comisionistas EXTERNOS, por eso el taller solo no alcanza.
+
+- **Talleres propios** (`TALLERES_PROPIOS`): `IRT0550` (Nova Gral Paz), `HIT0797` (Nova R20), `QUT0867` (Grupo P5). Confirmado con Ariel sobre exports reales. `QUT0856/0865` eran del Full.rar mal armado.
+- **Comisionistas propios** (`COMISIONISTAS_PROPIOS`, lista fija): `550@5/6/15` (PROMOTP), `797@2/3/4/5` (Nova R20 interno), `856@2/4/11` (Agencia/Mostrador/PROMO TP). **+ SUBTAL/GNCOBS3 vacío = trabajo directo = nuestro.**
+- **Regla de dígitos NO sirve** (Bronte `550@43` es externo con 2 díg.) → por eso lista explícita.
+- `getComisionista(r)` = `GNCOBS3 || SUBTAL` → funciona con ambos formatos.
+- **Visibilidad anti-error:** `procesarRows` devuelve `excluidosComisionista` (total + desglose por código) y el frontend muestra un banner con los excluidos, para cazar un código nuestro que quedó afuera del allowlist.
+
+### Split obleas / PH
+`tipoGestion(r)`: `UCODGEST === 'X'` → **PH** (Revisión CRPC); el resto → **oblea** (REV. ANUAL). NO hace falta el detalle de cilindros (ES-12) para esto. Se generan **dos tandas** de archivos: `obleas-*` y `ph-*`.
+
+### Export limpio para ManyChat (`dividirArchivos`)
+- Columnas: **`nombre;marca;modelo;patente;telefono`** (UAPEYNOM, UMARCA, UMODELO, UDOMINIO, WhatsApp 549…).
+- **Solo teléfonos válidos (OK)** entran. Los "0"/"11111"/basura NO se exportan. Los LEVE (arreglables a mano) quedan en la app para editar.
+- **N teléfonos por archivo** configurable en la UI (`porArchivo`, default 50) — es N **válidos**, no N registros.
+- Split por período de vencimiento + por N. Nombres `obleas-{MM-YYYY}-V{n}.csv`.
+- ZIP con carpetas `obleas/` y `ph/`.
+
+### Carga multi-archivo
+`/api/procesar` acepta varios CSV juntos (`upload.array('archivos')`) → se concatenan en un período. (El reporte Vencimientos Usuarios ya viene combinado, pero se soporta subir varios.)
+
+### Métricas
+- **Por Vendedor** (`GNCOBS1`: VDIAZ, FLUNA, BGUZMAN…) — presente en el formato 66-col. En el 144-col no existe → saldría "Sin vendedor".
+- Gráfico de taller muestra código + nombre (`TALLER_NOMBRES`).
+- Teléfonos `000000`/ceros → clasificados como SIN_TELEFONO (no "repetido obvio").
+- Sugerencia de teléfono (Opción A): solo se sugiere si es OK; LEVE/RECHAZAR → vacía (no inventar códigos de área).
+
+### Import directo desde InfoSys — todavía NO alcanza (2026-07-17)
+El feed `nova_operaciones` NO trae `GNCOBS1` (vendedor, 0 filas) y el comisionista (`SUBTAL`) viene incompleto (IRT0550 52%, QUT0867 ~0%). **Encargo ES-16** a Enargas Scrap: que el feed replique el reporte "Vencimientos Usuarios" 1:1. Cuando esté, el import directo funciona sin tocar la app (ya lee esos campos).
 
 ---
 
@@ -346,11 +389,18 @@ GET /api/base/importar?mes=YYYY-MM&tipo=todos|oblea|ph
 
 ## Pendientes conocidos
 
-1. **QUT0856 en talleresPropios de verificar.js** — el archivo `lib/verificar.js` (modo legacy) solo tiene IRT0550 y HIT0797. Si se vuelve a usar ese modo, agregar QUT0856.
-2. **Guía de uso para Yhonny** — documento operativo paso a paso
-3. ~~**Importar datos desde enargas_data**~~ ✅ HECHO 2026-07-13 — ver sección "Importación desde base (InfoSys)" arriba. Falta el split obleas/PH real (depende de ES-12 en Enargas Scrap).
-4. **Importación automática a ManyChat** — post-limpieza de teléfonos, Yhonny solo hace el broadcast
-5. **Sincronizar estructura local ↔ S18** — evaluar unificar con deploy script o action de GitHub
+1. **Import directo desde InfoSys** — bloqueado por **encargo ES-16** (Enargas Scrap): que `nova_operaciones` replique el reporte "Vencimientos Usuarios" (falta `GNCOBS1` vendedor + `GNCOBS3`/comisionista completo). Cuando esté, se puede dejar de subir el CSV a mano.
+2. **Reporte Mayo 2026** — quedó pendiente el paso manual de Yhonny (Ver guardados → Reintentar → 💾). Ver sección dalegas.
+3. **Guía de uso para Yhonny** — documento operativo paso a paso del flujo nuevo (subir Vencimientos Usuarios → revisar teléfonos → descargar obleas/PH → ManyChat).
+4. **Importación automática a ManyChat** — hoy Yhonny descarga el ZIP y hace el broadcast a mano.
+5. **Sincronizar estructura local ↔ S18** — evaluar deploy script o GitHub Action (hoy es scp + rebuild manual).
+6. **`verificar.js` legacy** — talleres desactualizados (IRT0550/HIT0797). Si se reactiva ese modo, alinear con `TALLERES_PROPIOS`.
+
+### Estado al cierre 2026-07-17
+- Formato "Vencimientos Usuarios" (66-col) soportado y probado. Filtro talleres+comisionistas, split obleas/PH, export limpio ManyChat, multi-archivo, encoding latin-1, por-vendedor, sugerencia Opción A — **todo desplegado**.
+- Incidente Mayo/dalegas: escape-hatch + reintentar con cache (force:false) desplegados; **ES-15** (bug backend jobs trabados) dejado a Enargas Scrap.
+- **ES-16** dejado a Enargas Scrap (feed replique el reporte).
+- Deploy protocol corregido (SIEMPRE rebuild, nunca solo restart).
 
 ---
 
