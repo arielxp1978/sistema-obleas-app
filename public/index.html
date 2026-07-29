@@ -84,6 +84,9 @@ input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 2px rg
 .phone-input.modified { border-color:var(--primary); background:#f0f6ff; }
 .spinner { display:inline-block; width:16px; height:16px; border:2px solid rgba(255,255,255,.3); border-top-color:#fff; border-radius:50%; animation:spin .6s linear infinite; }
 @keyframes spin { to { transform:rotate(360deg); } }
+/* Resalta el botón "Guardar" del header cuando hay un período cargado sin persistir. */
+@keyframes pulseSave { 0%,100% { box-shadow:0 0 0 0 rgba(52,211,153,.55); } 50% { box-shadow:0 0 0 7px rgba(52,211,153,0); } }
+#btnGuardar.pulse { background:rgba(52,211,153,.35); border-color:rgba(52,211,153,.7); animation:pulseSave 1.5s ease-out infinite; }
 .hidden { display:none !important; }
 .file-card { display:flex; justify-content:space-between; align-items:center; padding:12px 16px; border:1px solid var(--border); border-radius:var(--radius); margin-bottom:8px; background:#fff; }
 .file-card .file-info { font-weight:500; }
@@ -536,6 +539,7 @@ async function procesarArchivo(files) {
     STATE.excluidosComisionista = data.excluidosComisionista || null;
     STATE.resumenTipo = data.resumenTipo || null;
     STATE.archivosCargados = data.archivosCargados || [];
+    STATE.verificacion = null;  // dataset nuevo → descartar cualquier verificación previa en memoria
 
     document.getElementById('btnGuardar').classList.remove('hidden');
     STATE.sinGuardar = true;
@@ -625,6 +629,7 @@ async function importarDesdeBase() {
     STATE.totalFiltrado = data.totalFiltrado;
     STATE.resumenTipo = data.resumenTipo || null;
     STATE.excluidosComisionista = data.excluidosComisionista || null;
+    STATE.verificacion = null;  // dataset nuevo → descartar cualquier verificación previa en memoria
 
     document.getElementById('btnGuardar').classList.remove('hidden');
     STATE.sinGuardar = true;
@@ -634,9 +639,20 @@ async function importarDesdeBase() {
     actualizarArchivoActivo();
     renderTodo();
 
+    // Aviso claro de que hay que GUARDAR para que quede en "Obleas Guardadas" (traer desde
+    // InfoSys NO persiste solo). Queda en el panel de carga con un botón de guardado directo.
+    const hint = document.getElementById('baseHint');
+    if (hint) {
+      hint.innerHTML = `<div style="background:rgba(52,211,153,.12);border:1px solid rgba(52,211,153,.45);border-radius:8px;padding:10px 14px;">
+        ✅ <strong>${data.totalOriginal}</strong> obleas traídas de ${mes} — <strong>${data.totalFiltrado}</strong> filtradas (nuestros comisionistas).
+        <button onclick="guardarPeriodo()" style="margin-left:6px;background:var(--primary);color:#fff;border:none;border-radius:8px;padding:6px 12px;cursor:pointer;font-weight:600;">💾 Guardar período</button>
+        <div style="color:var(--text-sec);font-size:.85em;margin-top:6px;">Guardalo para que quede en <strong>Obleas Guardadas</strong>. Si no lo guardás, se pierde al recargar la página.</div>
+      </div>`;
+    }
+
     const c = data.conteo || {};
     switchTab('original');
-    console.log(`[base] Importados ${data.totalFiltrado} registros (${c.obleas || 0} obleas · ${c.ph || 0} PH) de ${mes}`);
+    console.log(`[base] Importados: original ${data.totalOriginal}, filtrado ${data.totalFiltrado} (${c.obleas || 0} obleas · ${c.ph || 0} PH) de ${mes}`);
   } catch (e) {
     alert('Error al traer desde base: ' + e.message);
   } finally {
@@ -737,16 +753,29 @@ function renderChartOriginal() {
     plugins: [ChartDataLabels]
   });
 
-  // Chart PEC (comisionista GNCOBS3) - datos del original completo
+  // Chart por Comisionista — distribución CRUDA del Original (todos los comisionistas del taller
+  // nuestro, propios y externos). Usa metricasOriginal.por_comisionista; para períodos guardados
+  // viejos que no lo tienen, cae al conteo sobre los registros disponibles.
   destroyChart('pecOrig');
   const ctxPec = document.getElementById('chartPecOrig');
-  if (ctxPec && STATE.registros.length) {
-    const pecCount = {};
+  let pecCount = (m.por_comisionista && Object.keys(m.por_comisionista).length) ? m.por_comisionista : null;
+  if (!pecCount && STATE.registros.length) {
+    pecCount = {};
     STATE.registros.forEach(r => {
       const pec = (r.GNCOBS3 || '(Sin comisionista)').trim() || '(Sin comisionista)';
       pecCount[pec] = (pecCount[pec] || 0) + 1;
     });
-    const pecLabels = Object.keys(pecCount), pecVals = Object.values(pecCount);
+  }
+  if (ctxPec && pecCount) {
+    const nombres = m.nombresComisionista || {};
+    // Ordenar por cantidad y agrupar la cola en "Otros" para no saturar el doughnut/leyenda.
+    const ent = Object.entries(pecCount).sort((a, b) => b[1] - a[1]);
+    const TOP = 12;
+    const pares = ent.length > TOP
+      ? ent.slice(0, TOP).concat([[`Otros (${ent.length - TOP})`, ent.slice(TOP).reduce((s, [, v]) => s + v, 0)]])
+      : ent;
+    // Mostrar el NOMBRE del comisionista (más reconocible que el código). Cae al código si no hay nombre.
+    const pecLabels = pares.map(([k]) => nombres[k] || k), pecVals = pares.map(([, v]) => v);
     charts.pecOrig = new Chart(ctxPec, {
       type: 'doughnut',
       data: { labels: pecLabels, datasets: [{ data: pecVals, backgroundColor: PALETTE, borderColor: '#1a1d2e', borderWidth: 3, hoverOffset: 10 }] },
@@ -870,7 +899,7 @@ function renderTelefonos() {
     html += `<tr>
       <td>${r._idx}</td><td>${r.UDOMINIO}</td>${tipoCell}<td>${r.UAPEYNOM}</td><td>${r.ULOCALIDAD}</td>
       <td style="font-family:monospace;">${r.UTELEFONO_ORIGINAL}</td>
-      <td style="font-family:monospace;">${r.UTELEFONO_SUGERENCIA}</td>
+      <td style="font-family:monospace;">${r.UTELEFONO_SUGERENCIA ? `<span onclick="usarSugerencia(${r._idx})" style="cursor:pointer;color:var(--primary);text-decoration:underline dotted;" title="Usar esta sugerencia como Número Final">${r.UTELEFONO_SUGERENCIA}</span>` : ''}</td>
       <td><input type="text" class="phone-input${final !== r.UTELEFONO_SUGERENCIA && final ? ' modified' : ''}" value="${final}" data-idx="${r._idx}" onchange="editarTelefono(this)"></td>
       <td><span class="badge ${badge}">${r.UTELEFONO_ESTADO}</span></td>
       <td style="font-size:.8em;color:var(--text-sec);">${r._errorDesc || ''}</td>
@@ -897,6 +926,14 @@ function editarTelefono(input) {
     reg.UTELEFONO_WHATSAPP = '549' + val;
     input.classList.add('modified');
   }
+}
+
+// Un click en la sugerencia la copia al campo "Número Final" (y lo marca OK si son 10 dígitos).
+function usarSugerencia(idx) {
+  const reg = STATE.registros.find(r => r._idx === idx);
+  if (!reg || !reg.UTELEFONO_SUGERENCIA) return;
+  const input = document.querySelector(`.phone-input[data-idx="${idx}"]`);
+  if (input) { input.value = reg.UTELEFONO_SUGERENCIA; editarTelefono(input); }
 }
 
 // ============================================================
@@ -943,12 +980,13 @@ function renderArchivos() {
   // Aviso de comisionistas externos excluidos (no van al broadcast de ManyChat)
   const exc = STATE.excluidosComisionista;
   if (exc && exc.total > 0) {
+    const nombres = (STATE.metricasOriginal && STATE.metricasOriginal.nombresComisionista) || {};
     const detalle = Object.entries(exc.porComisionista)
       .sort((a, b) => b[1] - a[1])
-      .map(([k, v]) => `${k}: ${v}`).join(' · ');
+      .map(([k, v]) => nombres[k] ? `${nombres[k]} (${k}): ${v}` : `${k}: ${v}`).join(' · ');
     html += `<div class="alert" style="background:rgba(251,188,4,.12);border:1px solid rgba(251,188,4,.4);border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:.9em;">
       🚫 <strong>${exc.total} obleas excluidas por comisionista externo</strong> (no entran a los archivos).<br>
-      <span style="color:var(--text-sec);">Por código: ${esc(detalle)}</span><br>
+      <span style="color:var(--text-sec);">Detalle: ${esc(detalle)}</span><br>
       <span style="color:var(--text-sec);font-size:.9em;">Si alguno de estos códigos es NUESTRO, avisá para agregarlo al listado de comisionistas propios.</span>
     </div>`;
   }
@@ -1533,10 +1571,13 @@ function actualizarArchivoActivo() {
   if (STATE.periodo && badge) {
     badge.style.display = 'flex';
     badge.classList.remove('hidden');
-    nombre.textContent = periodoNombreLegible(STATE.periodo);
+    nombre.textContent = periodoNombreLegible(STATE.periodo) + (STATE.sinGuardar ? ' · sin guardar' : '');
   } else if (badge) {
     badge.style.display = 'none';
   }
+  // Pulso en el botón "Guardar" del header mientras haya un período cargado sin persistir.
+  const btnG = document.getElementById('btnGuardar');
+  if (btnG) btnG.classList.toggle('pulse', !!(STATE.periodo && STATE.sinGuardar));
   // También actualizar el alert en tab archivos
   const archivoActual = document.getElementById('archivoActual');
   const archivoActualNombre = document.getElementById('archivoActualNombre');
@@ -1615,6 +1656,7 @@ async function guardarPeriodo() {
     const data = await resp.json();
     if (data.ok) {
       STATE.sinGuardar = false;
+      actualizarArchivoActivo();  // limpia el pulso del botón y el "· sin guardar"
       alert(periodoNombreLegible(STATE.periodo) + ' guardado (v' + data.periodo.version + ')');
       cargarPeriodos();
     }
@@ -1640,7 +1682,11 @@ async function cargarPeriodos() {
         html += `<div class="file-card" style="cursor:pointer;${bordeActivo}" onclick="cargarPeriodo('${p.periodoId}')">` +
           `<div><div class="file-info">\u{1F4C4} ${nombre}${badgeActivo}</div>` +
           `<div class="file-meta">v${p.version} \u2014 Guardado: ${new Date(p.guardadoEn).toLocaleString('es-AR')} \u2014 ${p.resumen.totalFiltrado} filtrados</div></div>` +
-          `<span style="color:var(--primary);font-size:.85em;">Cargar \u2192</span>` +
+          `<div style="display:flex;align-items:center;gap:10px;flex-shrink:0;">` +
+            `<span style="color:var(--primary);font-size:.85em;">Cargar \u2192</span>` +
+            `<button onclick="event.stopPropagation(); eliminarPeriodo('${p.periodoId}')" title="Borrar este per\u00edodo guardado" ` +
+              `style="background:rgba(234,67,53,.12);border:1px solid rgba(234,67,53,.4);color:#ea4335;border-radius:8px;padding:5px 9px;cursor:pointer;font-size:1em;line-height:1;">\u{1F5D1}\ufe0f</button>` +
+          `</div>` +
           `</div>`;
       });
       document.getElementById('listaPeriodos').innerHTML = html;
@@ -1648,6 +1694,17 @@ async function cargarPeriodos() {
       document.getElementById('listaPeriodos').innerHTML = '<p style="color:var(--text-sec);font-size:.9em;">No hay per\u00edodos guardados a\u00fan. Sub\u00ed un CSV para comenzar.</p>';
     }
   } catch (e) { console.error(e); }
+}
+
+async function eliminarPeriodo(id) {
+  const nombre = periodoNombreLegible(id);
+  if (!confirm(`¿Borrar "${nombre}" de Obleas Guardadas?\n\nSe elimina el período guardado. Después podés volver a traerlo desde InfoSys o subir el CSV de nuevo.`)) return;
+  try {
+    const resp = await authFetch(`/api/periodos/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp || !resp.ok || data.error) throw new Error(data.error || 'No se pudo borrar');
+    cargarPeriodos();
+  } catch (e) { alert('Error al borrar: ' + e.message); }
 }
 
 async function cargarPeriodo(id) {

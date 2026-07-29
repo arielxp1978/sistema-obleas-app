@@ -5,7 +5,7 @@ const path = require('path');
 const crypto = require('crypto');
 const fs = require('fs');
 const { Pool } = require('pg');
-const { procesarCompleto, procesarRows, normalizarLocalidad, parseCSV, dividirArchivos, canalLabel } = require('./lib/procesar');
+const { procesarCompleto, procesarRows, normalizarLocalidad, parseCSV, dividirArchivos, canalLabel, TALLERES_PROPIOS } = require('./lib/procesar');
 
 // Las megatablas de ENARGAS/InfoSys vienen en latin-1 (ISO-8859). Si se leen como utf8 se
 // corrompen ñ/tildes en nombres. Detectamos: si al decodificar utf8 aparece el carácter de
@@ -106,8 +106,12 @@ async function enriquecerObleas(normalizados) {
   return normalizados;
 }
 
-// Talleres propios de Nova (GP5 + Sorvicor) — usados para acotar la importación desde base
-const NOVA_TALLERES = ['HIT0797', 'IRT0550', 'QUT0856', 'QUT0865'];
+// Talleres propios de Nova (GP5 + Sorvicor) — usados para acotar la importación desde base.
+// FUENTE ÚNICA: se toma de procesar.js (TALLERES_PROPIOS) para que no haya dos listas que se
+// contradigan. Antes acá estaba hardcodeada ['HIT0797','IRT0550','QUT0856','QUT0865'] — MAL:
+// QUT0856/QUT0865 son talleres AJENOS (aparecían en un export mal armado) y faltaba QUT0867
+// (Grupo P5). Eso hacía que el import trajera obleas de otros talleres y perdiera las de P5.
+const NOVA_TALLERES = [...TALLERES_PROPIOS];
 
 // Normaliza UFECVENHAB de nova_operaciones (dos fuentes: ISO 'YYYY-MM-DD...' o CSV 'DD/MM/YYYY')
 // a un objeto Date. La conversión SQL ya se hace en la query; esto es defensivo.
@@ -643,8 +647,13 @@ app.get('/api/base/importar', async (req, res) => {
         UTIPDOC: d.UTIPDOC || '',
         UNRODOC: d.UNRODOC || row.titular_doc || '',
         GNCOBS3: d.GNCOBS3 || '',
+        SUBTAL: d.SUBTAL || '',
+        // Nombre legible del comisionista (InfoSys lo trae en subtaller_nombre: MANSILLA, MOSTRADOR…).
+        COMISIONISTA_NOMBRE: d.subtaller_nombre || '',
         TCODTAL: d.TCODTAL || row.taller_codigo || '',
         GNCOBS1: d.GNCOBS1 || d.subtaller_nombre || row.taller_codigo || '',
+        // UCODGEST alimenta tipoGestion() dentro de procesarRows (X = PH, resto = oblea).
+        UCODGEST: d.UCODGEST || (esPH ? 'X' : ''),
         _tipoGestion: esPH ? 'PH' : 'OBLEA'
       };
     });
@@ -659,7 +668,11 @@ app.get('/api/base/importar', async (req, res) => {
     if (tipo === 'oblea') seleccion = rows.filter(x => x._tipoGestion === 'OBLEA');
     else if (tipo === 'ph') seleccion = rows.filter(x => x._tipoGestion === 'PH');
 
-    const resultado = procesarRows(seleccion, { yaFiltrado: true });
+    // NO pasar yaFiltrado: la megatabla nova_operaciones trae, para un taller nuestro, tanto
+    // clientes directos/comisionistas propios COMO comisionistas externos que usan nuestro PEC.
+    // procesarRows aplica filtrar() → Original = todo lo del taller (todos los comisionistas),
+    // Filtrado = solo comisionista propio. Igual que el CSV "Vencimientos Usuarios".
+    const resultado = procesarRows(seleccion);
 
     res.json({
       ok: true,
@@ -673,6 +686,7 @@ app.get('/api/base/importar', async (req, res) => {
       metricasOriginal: resultado.metricasOriginal,
       metricasFiltrado: resultado.metricasFiltrado,
       normalizacion: resultado.normalizacion,
+      excluidosComisionista: resultado.excluidosComisionista,
       resumenTipo: resultado.resumenTipo,
       archivos: resultado.archivos.map(archivoMeta),
       registros: resultado.normalizados.map(mapRegistro)

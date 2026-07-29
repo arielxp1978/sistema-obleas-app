@@ -368,18 +368,25 @@ Alternativa al upload de CSV: traer los registros directo de `nova_operaciones` 
 
 ### Fuente de datos
 - Tabla: `nova_operaciones` (DB `enargas_data`, misma conexión `poolEnargas`). **Es de lectura** — la tabla y su sync los mantiene el proyecto **Enargas Scrap**, no sistema-obleas.
+- **OJO (2026-07-29):** `nova_operaciones` NO es solo de Nova — es un dump amplio de ENARGAS con **~100+ talleres** (competencia incluida). Por eso el import SIEMPRE acota a los talleres Nova en el SQL (`taller_codigo = ANY(NOVA_TALLERES)`).
 - Cada fila trae `datos_raw` (jsonb) con los mismos campos U* de la vieja megatabla CSV (UDOMINIO, UOBLEANEW, UTELEFONO, UAPEYNOM, TCODTAL, UFECVENHAB, etc.).
 - Dos fuentes con **dos formatos de fecha** en `UFECVENHAB`: `infosys_sql` (ISO `YYYY-MM-DD`) y `csv` (`DD/MM/YYYY`). El SQL normaliza ambos (`SQL_VENC_EXPR` en server.js).
-- Talleres Nova: `NOVA_TALLERES = ['HIT0797','IRT0550','QUT0856','QUT0865']`. GNCOBS3 siempre vacío en esta tabla.
+- Talleres Nova: `NOVA_TALLERES = [...TALLERES_PROPIOS]` (**fuente única** importada de `procesar.js` = `IRT0550, HIT0797, QUT0867`). **CORREGIDO 2026-07-29:** antes estaba hardcodeada `['HIT0797','IRT0550','QUT0856','QUT0865']` — MAL (QUT0856/0865 son talleres ajenos; faltaba QUT0867/Grupo P5).
+- **El feed ya trae la capa comercial (2026-07-29):** `GNCOBS1` (vendedor), `GNCOBS3` (código de comisionista) y `subtaller_nombre` (nombre del comisionista: MANSILLA, MOSTRADOR, etc.) vienen poblados en los meses recientes. El viejo comentario "GNCOBS3 siempre vacío / GNCOBS1 0 filas" quedó obsoleto — el encargo **ES-16 está sustancialmente cumplido**.
 
 ### Endpoints (server.js)
 ```
 GET /api/base/periodos                          → meses disponibles + conteo {total, obleas, ph}
 GET /api/base/importar?mes=YYYY-MM&tipo=todos|oblea|ph
-    → mismo shape que /api/procesar (registros, métricas, archivos)
-    → dedup DISTINCT ON (patente) por fecha_operacion desc; procesa con procesarRows(rows,{yaFiltrado:true})
+    → mismo shape que /api/procesar (registros, métricas, archivos, excluidosComisionista)
+    → dedup DISTINCT ON (patente) por fecha_operacion desc; procesa con procesarRows(rows)
 ```
-`procesar.js` expone `procesarRows(rows, opts)` (núcleo compartido CSV/base) y `normalizarLocalidad`. `mapRegistro()` en server.js da forma al registro para ambos paths.
+**Original vs Filtrado (CORREGIDO 2026-07-29):** el import llama `procesarRows(rows)` **SIN** `yaFiltrado`. Así `procesarRows` aplica `filtrar()` y quedan dos vistas distintas:
+- **Original** = todas las filas de talleres Nova (todos los comisionistas). Es la vista cruda.
+- **Filtrado** = solo comisionista propio (o venta directa sin comisionista). Es lo que va al broadcast, igual que el CSV.
+- Antes pasaba `{yaFiltrado:true}` → Original == Filtrado (bug: "Revisar Teléfonos" y "Ranking" mostraban todo sin filtrar). Los excluidos (taller nuestro + comisionista externo) se devuelven en `excluidosComisionista` y salen en el banner de la pestaña Archivos.
+
+`procesar.js` expone `procesarRows(rows, opts)` (núcleo compartido CSV/base) y `normalizarLocalidad`. `mapRegistro()` en server.js da forma al registro para ambos paths (incluye `COMISIONISTA_NOMBRE` = subtaller_nombre, para mostrar el nombre del comisionista en vez del código en gráficos/banner).
 
 ### Oblea vs PH — flag MOSTRAR_PH
 - Clasificación: `UCODGEST='X'` (Revisión CRPC) = **PH**; el resto = **oblea**.
@@ -389,12 +396,24 @@ GET /api/base/importar?mes=YYYY-MM&tipo=todos|oblea|ph
 
 ## Pendientes conocidos
 
-1. **Import directo desde InfoSys** — bloqueado por **encargo ES-16** (Enargas Scrap): que `nova_operaciones` replique el reporte "Vencimientos Usuarios" (falta `GNCOBS1` vendedor + `GNCOBS3`/comisionista completo). Cuando esté, se puede dejar de subir el CSV a mano.
+1. **Import directo desde InfoSys** — ✅ **funcionando (2026-07-29).** El feed ya trae vendedor (`GNCOBS1`), comisionista (`GNCOBS3`) y nombre (`subtaller_nombre`), así que el import filtra y muestra igual que el CSV. ES-16 sustancialmente cumplido. Verificar con Ariel si se puede cerrar ES-16 del lado de Enargas Scrap y dejar de subir CSV a mano.
 2. **Reporte Mayo 2026** — quedó pendiente el paso manual de Yhonny (Ver guardados → Reintentar → 💾). Ver sección dalegas.
 3. **Guía de uso para Yhonny** — documento operativo paso a paso del flujo nuevo (subir Vencimientos Usuarios → revisar teléfonos → descargar obleas/PH → ManyChat).
 4. **Importación automática a ManyChat** — hoy Yhonny descarga el ZIP y hace el broadcast a mano.
 5. **Sincronizar estructura local ↔ S18** — evaluar deploy script o GitHub Action (hoy es scp + rebuild manual).
 6. **`verificar.js` legacy** — talleres desactualizados (IRT0550/HIT0797). Si se reactiva ese modo, alinear con `TALLERES_PROPIOS`.
+
+### Estado al cierre 2026-07-29
+Sesión de ajustes al import de InfoSys + varios fixes (todo desplegado y verificado en producción):
+- **Import InfoSys: Original ≠ Filtrado.** Sacado el `yaFiltrado:true` → ahora Original = todos los talleres Nova (todos los comisionistas), Filtrado = comisionista propio. "Revisar Teléfonos" y "Ranking" leen del set filtrado. Agosto real: Original 1285 / Filtrado 464 / excluidos 821 (coincide con el 8-2026 del CSV).
+- **`NOVA_TALLERES` corregido** a `[...TALLERES_PROPIOS]` (fuente única en procesar.js): `IRT0550, HIT0797, QUT0867`. Se sacaron QUT0856/0865 (ajenos), se agregó QUT0867 (Grupo P5).
+- **Comisionista `797@11` (PROMO TP) agregado a `COMISIONISTAS_PROPIOS`** — es de Nova, confirmado por Ariel. Ya no se excluye.
+- **Nombres de comisionista en la UI.** El gráfico "por Comisionista" (Original) y el banner de excluidos muestran el nombre (`subtaller_nombre`: MANSILLA, MOSTRADOR…) en vez del código. Backend: `generarMetricas` arma `nombresComisionista` {código→nombre}; `metricasOriginal.por_comisionista` alimenta el gráfico (top-12 + "Otros").
+- **Sugerencia de teléfono: se revirtió parte de la "Opción A".** Ahora `sugerirCordoba()` (normalizar.js) completa con Córdoba `351` los teléfonos a los que solo les falta el código de área (abonado de 7 díg, o celular con "15" → se saca). Los que les falta un dígito o son basura siguen sin sugerencia (no se inventa). La sugerencia es clickeable en "Revisar Teléfonos" (`usarSugerencia` copia al Número Final). Decisión con Ariel: la mayoría de clientes son de Córdoba y Yhonny revisa antes de exportar.
+- **Borrar período guardado (issue #1):** botón 🗑️ por tarjeta en "Obleas Guardadas" (`eliminarPeriodo` → `DELETE /api/periodos/:id`). El endpoint ya existía; faltaba el botón.
+- **Guardar tras import InfoSys (issue #2):** aviso verde con botón "💾 Guardar período" tras traer, el botón del header pulsa y el badge dice "· sin guardar". Traer de InfoSys NO persiste solo — hay que guardar (igual que el CSV). Además se limpia `STATE.verificacion` al traer datos nuevos.
+- **Header:** config `talleresPropios` corregida a `IRT0550, HIT0797, QUT0867` (mostraba QUT0856).
+- **Sin cambios de infra.** Deploy por scp + rebuild (backups en `S18:.../_backup_deploy/`). **Cambios NO commiteados a git al momento de deployar** (el commit es este cierre).
 
 ### Estado al cierre 2026-07-17
 - Formato "Vencimientos Usuarios" (66-col) soportado y probado. Filtro talleres+comisionistas, split obleas/PH, export limpio ManyChat, multi-archivo, encoding latin-1, por-vendedor, sugerencia Opción A — **todo desplegado**.
