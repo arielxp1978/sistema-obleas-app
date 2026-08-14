@@ -298,23 +298,8 @@ input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 2px rg
 
 <!-- ==================== DESCARGAR ARCHIVOS ==================== -->
 <div class="tab-content" id="tc-archivos">
-  <div class="card">
-    <div class="flex justify-between items-center mb-4" style="flex-wrap:wrap;gap:12px;">
-      <h3 style="border:none;margin:0;padding:0;">Archivos para ManyChat</h3>
-      <div class="flex gap-2 items-center" style="flex-wrap:wrap;">
-        <label style="font-size:.85em;color:var(--text-sec);display:flex;align-items:center;gap:6px;">
-          Teléfonos por archivo:
-          <input type="number" id="inputPorArchivo" min="1" max="1000" value="50"
-            onchange="regenerarArchivos()" style="width:72px;padding:6px 8px;border:1px solid var(--border);border-radius:8px;font-size:1em;">
-        </label>
-        <button class="btn btn-success" onclick="descargarZip()">⬇️ Descargar ZIP</button>
-      </div>
-    </div>
-    <p style="font-size:.82em;color:var(--text-sec);margin-bottom:14px;">
-      Solo entran teléfonos válidos (los "0", "11111" y basura quedan afuera). Columnas: nombre · marca · modelo · patente · teléfono.
-    </p>
-    <div id="listaArchivos"></div>
-  </div>
+  <!-- Banner de comisionistas externos excluidos (arriba de todo; el detalle va en un desplegable) -->
+  <div id="bannerExcluidos"></div>
 
   <!-- ===== Inyección automática a ManyChat (OB-5) ===== -->
   <div class="card" id="cardInyeccion">
@@ -343,6 +328,26 @@ input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 2px rg
       <div class="fill" id="inyProgressFill"></div>
     </div>
     <div id="inyResultado"></div>
+  </div>
+
+  <!-- ===== Archivos obleas / PH + descarga ZIP (respaldo manual) ===== -->
+  <div class="card">
+    <div class="flex justify-between items-center mb-4" style="flex-wrap:wrap;gap:12px;">
+      <h3 style="border:none;margin:0;padding:0;">🔖 Obleas y 🧪 PH — archivos y ZIP</h3>
+      <div class="flex gap-2 items-center" style="flex-wrap:wrap;">
+        <label style="font-size:.85em;color:var(--text-sec);display:flex;align-items:center;gap:6px;">
+          Teléfonos por archivo:
+          <input type="number" id="inputPorArchivo" min="1" max="1000" value="100"
+            onchange="regenerarArchivos()" style="width:72px;padding:6px 8px;border:1px solid var(--border);border-radius:8px;font-size:1em;">
+        </label>
+        <button class="btn btn-success" onclick="descargarZip()">⬇️ Descargar ZIP</button>
+      </div>
+    </div>
+    <p style="font-size:.82em;color:var(--text-sec);margin-bottom:14px;">
+      Respaldo manual (por si no se usa la inyección automática de arriba). Solo entran teléfonos válidos
+      (los "0", "11111" y basura quedan afuera). Columnas: nombre · marca · modelo · patente · teléfono.
+    </p>
+    <div id="listaArchivos"></div>
   </div>
 </div>
 
@@ -481,7 +486,7 @@ let STATE = {
   resumenTipo: null,
   excluidosComisionista: null,
   archivosCargados: [],
-  porArchivo: 50,
+  porArchivo: 100,
   config: {}
 };
 
@@ -554,7 +559,7 @@ async function procesarArchivo(files) {
 
   const formData = new FormData();
   files.forEach(f => formData.append('archivos', f));
-  formData.append('porArchivo', STATE.porArchivo || 50);
+  formData.append('porArchivo', STATE.porArchivo || 100);
 
   try {
     prog.querySelector('.fill').style.width = '60%';
@@ -1030,22 +1035,35 @@ function renderRanking() {
 // ============================================================
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
+// Banner de comisionistas externos excluidos. El título queda a la vista; el detalle largo
+// (desglose por comisionista + la nota) va colapsado en un <details> para no llenar la pantalla.
+function renderBannerExcluidos() {
+  const cont = document.getElementById('bannerExcluidos');
+  if (!cont) return;
+  const exc = STATE.excluidosComisionista;
+  if (!exc || !exc.total) { cont.innerHTML = ''; return; }
+  const nombres = (STATE.metricasOriginal && STATE.metricasOriginal.nombresComisionista) || {};
+  const detalle = Object.entries(exc.porComisionista)
+    .sort((a, b) => b[1] - a[1])
+    .map(([k, v]) => nombres[k] ? `${nombres[k]} (${k}): ${v}` : `${k}: ${v}`).join(' · ');
+  cont.innerHTML = `<div class="alert" style="background:rgba(251,188,4,.12);border:1px solid rgba(251,188,4,.4);border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:.9em;">
+    <details>
+      <summary style="cursor:pointer;list-style:none;">
+        🚫 <strong>${exc.total} obleas excluidas por comisionista externo</strong> (no entran a los archivos).
+        <span style="color:var(--text-sec);font-size:.9em;">— ver detalle ▾</span>
+      </summary>
+      <div style="margin-top:8px;">
+        <span style="color:var(--text-sec);">Detalle: ${esc(detalle)}</span><br>
+        <span style="color:var(--text-sec);font-size:.9em;">Si alguno de estos códigos es NUESTRO, avisá para agregarlo al listado de comisionistas propios.</span>
+      </div>
+    </details>
+  </div>`;
+}
+
 function renderArchivos() {
+  renderBannerExcluidos();
   const c = document.getElementById('listaArchivos');
   let html = '';
-  // Aviso de comisionistas externos excluidos (no van al broadcast de ManyChat)
-  const exc = STATE.excluidosComisionista;
-  if (exc && exc.total > 0) {
-    const nombres = (STATE.metricasOriginal && STATE.metricasOriginal.nombresComisionista) || {};
-    const detalle = Object.entries(exc.porComisionista)
-      .sort((a, b) => b[1] - a[1])
-      .map(([k, v]) => nombres[k] ? `${nombres[k]} (${k}): ${v}` : `${k}: ${v}`).join(' · ');
-    html += `<div class="alert" style="background:rgba(251,188,4,.12);border:1px solid rgba(251,188,4,.4);border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:.9em;">
-      🚫 <strong>${exc.total} obleas excluidas por comisionista externo</strong> (no entran a los archivos).<br>
-      <span style="color:var(--text-sec);">Detalle: ${esc(detalle)}</span><br>
-      <span style="color:var(--text-sec);font-size:.9em;">Si alguno de estos códigos es NUESTRO, avisá para agregarlo al listado de comisionistas propios.</span>
-    </div>`;
-  }
   // Resumen obleas / PH
   const rt = STATE.resumenTipo;
   if (rt) {
@@ -1093,7 +1111,7 @@ function renderArchivos() {
 
 function leerPorArchivo() {
   const el = document.getElementById('inputPorArchivo');
-  const n = parseInt(el && el.value) || 50;
+  const n = parseInt(el && el.value) || 100;
   STATE.porArchivo = n;
   return n;
 }

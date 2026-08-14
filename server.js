@@ -382,7 +382,7 @@ app.post('/api/procesar', upload.array('archivos', 10), async (req, res) => {
     const rows = [];
     for (const f of files) rows.push(...parseCSV(decodeCsv(f.buffer)));
 
-    const porArchivo = parseInt(req.body.porArchivo) || 50;
+    const porArchivo = parseInt(req.body.porArchivo) || 100;
     const resultado = procesarRows(rows, { porArchivo });
 
     // Enriquecer UOBLEANEW desde enargas_data para registros que no lo traen en el CSV
