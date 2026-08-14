@@ -483,9 +483,17 @@ Pantalla para auditar la calidad del teléfono que carga un taller (o un comisio
 1. **Import directo desde InfoSys** — ✅ **funcionando (2026-07-29).** El feed ya trae vendedor (`GNCOBS1`), comisionista (`GNCOBS3`) y nombre (`subtaller_nombre`), así que el import filtra y muestra igual que el CSV. ES-16 sustancialmente cumplido. Verificar con Ariel si se puede cerrar ES-16 del lado de Enargas Scrap y dejar de subir CSV a mano.
 2. **Reporte Mayo 2026** — quedó pendiente el paso manual de Yhonny (Ver guardados → Reintentar → 💾). Ver sección dalegas.
 3. **Guía de uso para Yhonny** — documento operativo paso a paso del flujo nuevo (subir Vencimientos Usuarios → revisar teléfonos → descargar obleas/PH → ManyChat).
-4. **Importación automática a ManyChat** — hoy Yhonny descarga el ZIP y hace el broadcast a mano.
+4. **Importación automática a ManyChat** — ✅ **resuelto en OB-5** (botón "🚀 Inyectar a ManyChat" en el tab Descargar Archivos, ver sección OB-5). El ZIP queda como respaldo.
 5. **Sincronizar estructura local ↔ S18** — evaluar deploy script o GitHub Action (hoy es scp + rebuild manual).
 6. **`verificar.js` legacy** — talleres desactualizados (IRT0550/HIT0797). Si se reactiva ese modo, alinear con `TALLERES_PROPIOS`.
+
+### Estado al cierre 2026-08-14 (OB-5) — Inyección a ManyChat desde la app
+Paso 2/2 del stack "Inyeccion Obleas". Yhonny inyecta a ManyChat desde el tab **Descargar Archivos** (tanda + preview + trigger + progreso). Ver sección **"Inyectar a ManyChat — botón de Yhonny (OB-5)"**. Todo desplegado (scp + rebuild) y commiteado (`07be6c5`, pusheado).
+- **End-to-end verificado el mismo día:** GP-37 desplegó su contenedor (`inyeccion-obleas-manychat`, S18:3120, healthy) y es alcanzable desde el container de obleas. Dry-run del período `4-2026` vía el servicio → 469 válidos, reparto V1–V5. El stack quedó **operativo**.
+- **Pendiente antes de la 1ª corrida real:** prueba visual con Yhonny logueada + test obligatorio con números de test (protocolo GP-37). Yo no puedo hacer el OAuth headless.
+- **Decisión abierta (de Ariel, con CEO/GP-37 — no obleas):** ¿el `taller` va como **tag** o como **custom field** en ManyChat? El diseño lo marca opcional (no es eje de filtro). Obleas ya emite `taller`/`taller_nombre` igual; la materialización es de GP-37.
+- **Config nueva en S18:** `INYECCION_API_KEY` (solo env, en `.env` + bloque `environment:` del `docker-compose.yml`) e `INYECCION_SERVICE_URL`. Backups `.env.bak-*` y `docker-compose.yml.bak-*` en S18.
+- **Nota ecosistema (para el CEO):** el contrato de consumo obleas→servicio GP-37 podría registrarse en MAPA-SISTEMA.md (fuente única + contrato). No lo toco desde este proyecto.
 
 ### Estado al cierre 2026-08-14 (OB-7) — Login gobernado por el panel
 Paso 2/2 del stack "Login Obleas" (CEO-64). El login de obleas dejó de decidirse por dominio y ahora lo autoriza el panel. Desplegado y verificado en producción (scp + rebuild).
