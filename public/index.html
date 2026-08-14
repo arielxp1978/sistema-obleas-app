@@ -315,6 +315,35 @@ input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 2px rg
     </p>
     <div id="listaArchivos"></div>
   </div>
+
+  <!-- ===== Inyección automática a ManyChat (OB-5) ===== -->
+  <div class="card" id="cardInyeccion">
+    <div class="flex justify-between items-center mb-4" style="flex-wrap:wrap;gap:12px;">
+      <h3 style="border:none;margin:0;padding:0;">🚀 Inyectar a ManyChat</h3>
+      <span id="inyServicioEstado" style="font-size:.8em;color:var(--text-sec);"></span>
+    </div>
+    <p style="font-size:.82em;color:var(--text-sec);margin-bottom:14px;">
+      En vez de descargar el ZIP y cargar a mano, esto sube los contactos del período directo a ManyChat
+      y les aplica las etiquetas (<em>Aviso Oblea</em> · mes · grupo · V*). Definí el tamaño de tanda,
+      mirá el <strong>preview</strong> para confirmar el reparto, y recién ahí <strong>inyectá</strong>.
+      El período tiene que estar <strong>guardado</strong> (💾).
+    </p>
+    <div class="flex gap-4 items-center mb-4" style="flex-wrap:wrap;">
+      <label style="font-size:.85em;color:var(--text-sec);display:flex;align-items:center;gap:6px;">
+        Tamaño de tanda (V*):
+        <input type="number" id="inputTandaSize" min="1" max="5000" value="100"
+          style="width:88px;padding:6px 8px;border:1px solid var(--border);border-radius:8px;font-size:1em;">
+      </label>
+      <button class="btn btn-primary" id="btnPreviewIny" onclick="previewInyeccion()">👁️ Preview</button>
+      <button class="btn btn-success hidden" id="btnEjecutarIny" onclick="ejecutarInyeccion()">🚀 Inyectar a ManyChat</button>
+      <span id="inyStatus" style="font-size:.9em;color:var(--text-sec);"></span>
+    </div>
+    <div id="inyPreview"></div>
+    <div class="progress-bar mb-4" id="inyProgress" style="display:none;">
+      <div class="fill" id="inyProgressFill"></div>
+    </div>
+    <div id="inyResultado"></div>
+  </div>
 </div>
 
 <!-- ==================== VERIFICACIÓN POST-ENVÍO ==================== -->
@@ -489,6 +518,7 @@ document.querySelectorAll('.tab').forEach(t => {
     document.querySelectorAll('.tab-content').forEach(x => x.classList.remove('active'));
     t.classList.add('active');
     document.getElementById('tc-' + t.dataset.tab).classList.add('active');
+    if (t.dataset.tab === 'archivos') chequearServicioInyeccion();
   });
 });
 
@@ -1101,6 +1131,175 @@ async function descargarZip() {
     a.href = url; a.download = `manychat-${STATE.periodo || 'export'}.zip`;
     a.click(); URL.revokeObjectURL(url);
   } catch (e) { alert('Error: ' + e.message); }
+}
+
+// ============================================================
+// INYECCIÓN A MANYCHAT (OB-5) — consume el servicio GP-37 vía proxy /api/inyeccion/*
+// ============================================================
+let INY_POLL = null;   // handle del setInterval de polling
+
+// Chequea que el servicio esté arriba y refleja el estado en la UI. Se llama al abrir el tab.
+async function chequearServicioInyeccion() {
+  const el = document.getElementById('inyServicioEstado');
+  if (!el) return;
+  el.textContent = 'Verificando servicio…'; el.style.color = 'var(--text-sec)';
+  try {
+    const resp = await authFetch('/api/inyeccion/health');
+    if (!resp) return;
+    const data = await resp.json();
+    if (!data.configurado) { el.textContent = '⚠️ No configurado en el servidor'; el.style.color = '#ea4335'; }
+    else if (data.ok) { el.textContent = '🟢 Servicio disponible'; el.style.color = '#34a853'; }
+    else { el.textContent = '🔴 Servicio no responde'; el.style.color = '#ea4335'; }
+  } catch (e) { el.textContent = '🔴 Servicio no responde'; el.style.color = '#ea4335'; }
+}
+
+function leerTandaSize() {
+  const n = parseInt(document.getElementById('inputTandaSize').value, 10) || 100;
+  return Math.max(1, n);
+}
+
+// Un período subido por CSV no trae cilindros → todo cae como "ph_desconocido" (= Nova Obleas).
+// No es bloqueante, pero conviene avisar.
+function inyeccionRequisitos() {
+  if (!STATE.periodo) { alert('Primero cargá o traé un período.'); return false; }
+  if (STATE.sinGuardar) {
+    alert('El período tiene cambios sin guardar. Guardá con 💾 antes de inyectar (el servicio lee el período guardado).');
+    return false;
+  }
+  return true;
+}
+
+async function previewInyeccion() {
+  if (!inyeccionRequisitos()) return;
+  const status = document.getElementById('inyStatus');
+  const btn = document.getElementById('btnPreviewIny');
+  const btnExec = document.getElementById('btnEjecutarIny');
+  btnExec.classList.add('hidden');
+  document.getElementById('inyResultado').innerHTML = '';
+  btn.disabled = true; status.textContent = 'Calculando reparto…'; status.style.color = 'var(--text-sec)';
+  try {
+    const resp = await authFetch('/api/inyeccion/preview', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ periodo: STATE.periodo, tanda_size: leerTandaSize() })
+    });
+    if (!resp) return;
+    const data = await resp.json();
+    if (!resp.ok || !data.ok) throw new Error(data.error || 'No se pudo generar el preview');
+    renderInyeccionPlan(data.plan);
+    status.textContent = '✅ Preview listo — revisá el reparto y confirmá.'; status.style.color = '#34a853';
+    btnExec.classList.remove('hidden');
+  } catch (e) {
+    document.getElementById('inyPreview').innerHTML = '';
+    status.textContent = '❌ ' + e.message; status.style.color = '#ea4335';
+  } finally { btn.disabled = false; }
+}
+
+function renderInyeccionPlan(plan) {
+  const grupos = (plan.porGrupo || []).map(g => {
+    const vs = Object.keys(g.v).sort((a, b) => parseInt(a.slice(1)) - parseInt(b.slice(1)))
+      .map(k => `<span style="display:inline-block;background:rgba(66,133,244,.12);border:1px solid rgba(66,133,244,.3);border-radius:6px;padding:1px 7px;margin:2px;font-size:.82em;">${esc(k)}: ${g.v[k]}</span>`).join('');
+    return `<div style="border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:8px;">
+      <div style="font-weight:600;">${esc(g.grupo)} <span style="font-weight:400;color:var(--text-sec);">— ${g.total} contactos</span></div>
+      <div style="margin-top:4px;">${vs}</div>
+    </div>`;
+  }).join('');
+  const avisos = [];
+  if (plan.invalidos) avisos.push(`${plan.invalidos} teléfono(s) inválido(s) se descartan`);
+  if (plan.superanV10) avisos.push(`⚠️ ${plan.superanV10} contacto(s) superan V10 (subí el tamaño de tanda)`);
+  if (plan.sinTagTaller) avisos.push(`${plan.sinTagTaller} sin tag de taller`);
+  document.getElementById('inyPreview').innerHTML = `
+    <div class="alert" style="background:rgba(52,168,83,.08);border:1px solid rgba(52,168,83,.3);border-radius:8px;padding:12px 16px;margin-bottom:14px;">
+      <div style="display:flex;gap:18px;flex-wrap:wrap;font-size:.9em;">
+        <div><strong>Período:</strong> ${esc(plan.periodoLabel || '')}</div>
+        <div><strong>Tanda:</strong> ${plan.tandaSize}</div>
+        <div><strong>Válidos:</strong> ${plan.validos}</div>
+        <div><strong>En export:</strong> ${plan.totalExport}</div>
+      </div>
+      ${avisos.length ? `<div style="margin-top:8px;color:var(--text-sec);font-size:.85em;">${avisos.map(esc).join(' · ')}</div>` : ''}
+      <div style="margin-top:8px;font-size:.82em;color:var(--text-sec);">Etiquetas comunes: ${(plan.tagsComunes || []).map(esc).join(' · ')}</div>
+    </div>
+    <h4 style="margin:0 0 8px;">Reparto por grupo</h4>
+    ${grupos || '<p style="color:var(--text-sec);">Sin contactos para inyectar.</p>'}`;
+}
+
+async function ejecutarInyeccion() {
+  if (!inyeccionRequisitos()) return;
+  const plan = document.getElementById('inyPreview').textContent || '';
+  if (!confirm('Esto va a crear/actualizar subscribers en ManyChat y aplicarles las etiquetas del período.\n\n¿Confirmás la inyección REAL con el reparto del preview?')) return;
+  const status = document.getElementById('inyStatus');
+  const btn = document.getElementById('btnEjecutarIny');
+  const btnPrev = document.getElementById('btnPreviewIny');
+  btn.disabled = true; btnPrev.disabled = true;
+  status.textContent = 'Arrancando inyección…'; status.style.color = 'var(--text-sec)';
+  document.getElementById('inyResultado').innerHTML = '';
+  try {
+    const resp = await authFetch('/api/inyeccion/ejecutar', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ periodo: STATE.periodo, tanda_size: leerTandaSize() })
+    });
+    if (!resp) return;
+    const data = await resp.json();
+    if (!resp.ok || !data.jobId) throw new Error(data.error || 'No se pudo iniciar la inyección');
+    status.textContent = '⏳ Inyectando…';
+    pollInyeccionEstado(data.jobId);
+  } catch (e) {
+    status.textContent = '❌ ' + e.message; status.style.color = '#ea4335';
+    btn.disabled = false; btnPrev.disabled = false;
+  }
+}
+
+function pollInyeccionEstado(jobId) {
+  const status = document.getElementById('inyStatus');
+  const prog = document.getElementById('inyProgress');
+  const fill = document.getElementById('inyProgressFill');
+  prog.style.display = 'block'; fill.style.width = '0%';
+  if (INY_POLL) clearInterval(INY_POLL);
+  const tick = async () => {
+    try {
+      const resp = await authFetch('/api/inyeccion/estado/' + encodeURIComponent(jobId));
+      if (!resp) return;
+      const data = await resp.json();
+      if (!resp.ok || !data.ok) throw new Error(data.error || 'Error consultando estado');
+      const pr = data.progreso || {};
+      if (pr.n) { fill.style.width = Math.round((pr.i / pr.n) * 100) + '%'; status.textContent = `⏳ Inyectando… ${pr.i}/${pr.n}`; }
+      if (data.estado === 'hecho' || data.estado === 'error') {
+        clearInterval(INY_POLL); INY_POLL = null;
+        document.getElementById('btnEjecutarIny').disabled = false;
+        document.getElementById('btnPreviewIny').disabled = false;
+        if (data.estado === 'hecho') {
+          fill.style.width = '100%';
+          status.textContent = '✅ Inyección completada'; status.style.color = '#34a853';
+          renderInyeccionResumen(data.resumen);
+        } else {
+          status.textContent = '❌ ' + (data.error || 'Error en la inyección'); status.style.color = '#ea4335';
+        }
+      }
+    } catch (e) {
+      clearInterval(INY_POLL); INY_POLL = null;
+      document.getElementById('btnEjecutarIny').disabled = false;
+      document.getElementById('btnPreviewIny').disabled = false;
+      status.textContent = '❌ ' + e.message; status.style.color = '#ea4335';
+    }
+  };
+  tick();
+  INY_POLL = setInterval(tick, 5000);
+}
+
+function renderInyeccionResumen(r) {
+  if (!r) { document.getElementById('inyResultado').innerHTML = ''; return; }
+  const item = (label, val, color) => `<div class="metric-card-vibrant ${color}"><div class="value">${val ?? 0}</div><div class="label">${label}</div></div>`;
+  document.getElementById('inyResultado').innerHTML = `
+    <h4 style="margin:16px 0 8px;">Resumen de la corrida</h4>
+    <div class="metrics-grid">
+      ${item('Total', r.total, 'mv-blue')}
+      ${item('Creados', r.creados, 'mv-green')}
+      ${item('Actualizados', r.actualizados, 'mv-teal')}
+      ${item('Opt-out (excluidos)', r.optout, 'mv-amber')}
+      ${item('Con error', r.conError, 'mv-red')}
+    </div>
+    <p style="font-size:.82em;color:var(--text-sec);margin-top:10px;">
+      Ahora Yhonny arma el broadcast en ManyChat filtrando por <strong>mes + grupo + V</strong>.
+    </p>`;
 }
 
 // ============================================================

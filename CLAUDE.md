@@ -424,6 +424,47 @@ Header: X-API-Key: <MANYCHAT_EXPORT_API_KEY>
 ### Contrato para GP-37
 GP-37 llama al endpoint con la key, mapea `tipo_vencimiento` → tags de ManyChat (`Nova Obleas` / `Nova PH`), `periodo` → tag de mes, `taller` → `Taller Sorvi`/`Taller GP5`. sistema-obleas **no** decide tags — solo entrega el dato.
 
+## Inyectar a ManyChat desde la app — botón de Yhonny (OB-5 — 2026-08-14)
+
+Paso 2/2 del stack "Inyeccion Obleas". Yhonny **define la tanda, ve el preview y dispara la inyección**
+sin CLI, desde el tab **"Descargar Archivos"** (card `🚀 Inyectar a ManyChat`, debajo del ZIP). La app
+**no reimplementa nada de ManyChat**: es un **proxy** al servicio GP-37 (`organizacion-gp5`), que es el
+dueño de la lógica (upsert por WhatsApp + tags + reparto V\* + opt-out). Aislamiento respetado.
+
+### Flujo en la UI (`public/index.html`)
+1. Input **tamaño de tanda (V\*)** (default 100).
+2. **Preview** (`previewInyeccion`) → dry-run → `renderInyeccionPlan` muestra el reparto por grupo con
+   las V\*, válidos/inválidos, aviso si supera V10, etiquetas comunes. NO toca ManyChat.
+3. **Inyectar a ManyChat** (`ejecutarInyeccion`, aparece tras el preview) → confirm → corrida **real**
+   → barra de progreso con polling cada 5 s (`pollInyeccionEstado`) → **resumen** (creados /
+   actualizados / opt-out / con error).
+4. **Semáforo de salud** del servicio en el header de la card (`chequearServicioInyeccion`, al abrir el tab).
+- **Exige período GUARDADO** (💾): el servicio lee la audiencia vía el endpoint OB-4, que solo devuelve
+  períodos guardados. CSV (sin cilindros) → todo `ph_desconocido` = Nova Obleas (igual funciona).
+
+### Proxy en server.js (la X-API-Key nunca va al browser)
+```
+GET  /api/inyeccion/health                          → { ok, configurado }  (semáforo)
+POST /api/inyeccion/preview   { periodo, tanda_size } → GP-37 POST /inyectar modo dry-run → { plan }
+POST /api/inyeccion/ejecutar  { periodo, tanda_size } → GP-37 POST /inyectar modo real     → { jobId }
+GET  /api/inyeccion/estado/:jobId                    → GP-37 GET /estado/:jobId
+```
+Protegidos por sesión (Yhonny logueada). Fallo de red → 502 con mensaje claro; sin key → 503.
+
+### Config (S18)
+- `INYECCION_API_KEY` — **solo por env** (regla de credenciales, sin fallback en código). En el `.env`
+  de S18 **y** en el bloque `environment:` del `docker-compose.yml` de obleas (la lista es explícita).
+  Coincide con la key del servicio GP-37 (registrada en `panel.api_keys`, PN-76).
+- `INYECCION_SERVICE_URL` — default `http://192.168.0.18:3120` (ambos containers en S18; GP-37 publica 3120).
+
+### Contrato del servicio GP-37 (S18:3120, contenedor propio de organizacion-gp5)
+- dry-run → `{ ok, plan: { periodoLabel, tandaSize, totalExport, validos, invalidos, porGrupo:[{grupo,total,v}], superanV10, sinTagTaller, tagsComunes } }`
+- real → 202 `{ ok, accepted, jobId, estadoUrl }` · estado → `{ ok, estado:'corriendo'|'hecho'|'error', progreso:{i,n}, resumen:{total,creados,actualizados,optout,conError} }`
+
+**Dependencia:** el end-to-end real requiere que el **contenedor GP-37 esté levantado** en S18:3120
+(deploy = trabajo de GP-37, `en_curso` en organizacion-gp5 al 2026-08-14). Si no está, la UI muestra
+🔴 "Servicio no responde" y no rompe. Cuando GP-37 levante el 3120, funciona sin tocar obleas.
+
 ## Calidad de Contactos (OB-3 — 2026-08-14)
 
 Pantalla para auditar la calidad del teléfono que carga un taller (o un comisionista bajo un taller nuestro), y bajar un informe PDF para pedirle que corrija. Encargo `encargos/hechos/…-OB-3-…-DONE.md`.

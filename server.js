@@ -30,6 +30,12 @@ const INFORME_OBLEAS_API_KEY = process.env.INFORME_OBLEAS_API_KEY || 'SistemaObl
 const CALIDAD_API_KEY = process.env.CALIDAD_API_KEY || DALEGAS_API_KEY;
 // API key del endpoint de export a ManyChat (lo consume GP-37/n8n sin sesión). Ver /api/export/manychat.
 const MANYCHAT_EXPORT_API_KEY = process.env.MANYCHAT_EXPORT_API_KEY || 'NovaObleasManychat2026';
+// Servicio de inyección obleas → ManyChat (GP-37, contenedor propio en S18:3120). Lo consume el
+// botón de Yhonny vía los proxies /api/inyeccion/* (OB-5). La KEY va SOLO por env (regla de
+// credenciales: nada literal en el repo) — configurarla en el .env de S18. La URL es la del host
+// (los dos containers viven en S18; el 3120 está publicado por docker-compose de GP-37).
+const INYECCION_SERVICE_URL = process.env.INYECCION_SERVICE_URL || 'http://192.168.0.18:3120';
+const INYECCION_API_KEY = process.env.INYECCION_API_KEY || '';
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 const GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI || 'http://192.168.0.18:3080/auth/google/callback';
@@ -875,6 +881,92 @@ app.get('/api/export/manychat', (req, res) => {
     console.error('[export/manychat] error:', e);
     res.status(500).json({ error: e.message });
   }
+});
+
+// ============================================================
+// INYECCIÓN A MANYCHAT (OB-5) — proxy al servicio GP-37 (S18:3120)
+// ============================================================
+// Yhonny define el tamaño de tanda, ve el preview (dry-run) y dispara la inyección real, todo desde
+// esta app. La app NO reimplementa nada de ManyChat: sólo llama al servicio de GP-37 (organizacion-gp5),
+// que es el dueño de la lógica de upsert + tags. La X-API-Key vive en el server (nunca en el browser).
+// Contrato GP-37: POST /inyectar {periodo, tanda_size, modo:'dry-run'|'real'} · GET /estado/:jobId.
+
+function inyeccionConfigurada(res) {
+  if (!INYECCION_API_KEY) {
+    res.status(503).json({ error: 'La inyección no está configurada en el servidor (falta INYECCION_API_KEY en el .env de S18).' });
+    return false;
+  }
+  return true;
+}
+
+// Traduce un fallo de red al servicio en un mensaje claro para Yhonny.
+function errorInyeccion(res, e) {
+  const red = /fetch failed|ECONNREFUSED|ETIMEDOUT|abort|network|getaddrinfo/i.test(e.message || '');
+  if (red) {
+    return res.status(502).json({ error: 'No se pudo contactar el servicio de inyección (¿está levantado el contenedor en S18:3120?).', detalle: e.message });
+  }
+  return res.status(500).json({ error: e.message });
+}
+
+// Chequeo de disponibilidad del servicio (health) — la UI lo usa para avisar antes de intentar.
+app.get('/api/inyeccion/health', async (req, res) => {
+  if (!INYECCION_API_KEY) return res.json({ ok: false, configurado: false });
+  try {
+    const resp = await fetch(`${INYECCION_SERVICE_URL}/health`, { signal: AbortSignal.timeout(5000) });
+    const data = await resp.json().catch(() => ({}));
+    res.json({ ok: !!data.ok, configurado: true });
+  } catch (e) {
+    res.json({ ok: false, configurado: true, error: 'servicio no disponible' });
+  }
+});
+
+// Preview del plan (dry-run): NO toca ManyChat. Devuelve el reparto por grupo + V* para confirmar.
+app.post('/api/inyeccion/preview', async (req, res) => {
+  if (!inyeccionConfigurada(res)) return;
+  try {
+    const periodo = String(req.body.periodo || '').trim();
+    const tanda_size = parseInt(req.body.tanda_size, 10) || 100;
+    if (!periodo) return res.status(400).json({ error: 'Falta el período.' });
+    const resp = await fetch(`${INYECCION_SERVICE_URL}/inyectar`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-API-Key': INYECCION_API_KEY },
+      body: JSON.stringify({ periodo, tanda_size, modo: 'dry-run' }),
+      signal: AbortSignal.timeout(30000)
+    });
+    const data = await resp.json();
+    res.status(resp.status).json(data);
+  } catch (e) { errorInyeccion(res, e); }
+});
+
+// Ejecución real (async): arranca la corrida y devuelve { jobId }. Se sigue con /estado/:jobId.
+app.post('/api/inyeccion/ejecutar', async (req, res) => {
+  if (!inyeccionConfigurada(res)) return;
+  try {
+    const periodo = String(req.body.periodo || '').trim();
+    const tanda_size = parseInt(req.body.tanda_size, 10) || 100;
+    if (!periodo) return res.status(400).json({ error: 'Falta el período.' });
+    const resp = await fetch(`${INYECCION_SERVICE_URL}/inyectar`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-API-Key': INYECCION_API_KEY },
+      body: JSON.stringify({ periodo, tanda_size, modo: 'real' }),
+      signal: AbortSignal.timeout(30000)
+    });
+    const data = await resp.json();
+    res.status(resp.status).json(data);
+  } catch (e) { errorInyeccion(res, e); }
+});
+
+// Estado de una corrida real. La UI hace polling cada ~5s hasta 'hecho'/'error'.
+app.get('/api/inyeccion/estado/:jobId', async (req, res) => {
+  if (!inyeccionConfigurada(res)) return;
+  try {
+    const resp = await fetch(`${INYECCION_SERVICE_URL}/estado/${encodeURIComponent(req.params.jobId)}`, {
+      headers: { 'X-API-Key': INYECCION_API_KEY },
+      signal: AbortSignal.timeout(15000)
+    });
+    const data = await resp.json();
+    res.status(resp.status).json(data);
+  } catch (e) { errorInyeccion(res, e); }
 });
 
 // ============================================================
