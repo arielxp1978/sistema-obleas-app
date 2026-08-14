@@ -446,6 +446,15 @@ Pantalla para auditar la calidad del teléfono que carga un taller (o un comisio
 5. **Sincronizar estructura local ↔ S18** — evaluar deploy script o GitHub Action (hoy es scp + rebuild manual).
 6. **`verificar.js` legacy** — talleres desactualizados (IRT0550/HIT0797). Si se reactiva ese modo, alinear con `TALLERES_PROPIOS`.
 
+### Estado al cierre 2026-08-14
+Sesión OB-3 (reportes de calidad de contactos) + login multi-dominio. Todo desplegado y verificado en producción (scp + rebuild):
+- **OB-3 ejecutado y cerrado** (`encargos/hechos/…-OB-3-…-DONE.md`). Pantalla `calidad-contactos.html` + proxy `/api/calidad-contactos` (consume `api.dalegas.com.ar/api/calidad_contactos`, fuente única Enargas Scrap) + documento oficial + PDF (html2pdf) con filename que incluye `ref_interna`. Regla de discreción verificada (el cuerpo del reporte por comisionista solo muestra el taller, nunca el código). Ver sección "Calidad de Contactos (OB-3)".
+- **Buscador** de taller/comisionista por código o nombre (endpoint `/api/calidad-contactos/opciones` desde `nova_operaciones`, solo lectura). Taller = multi-select con chips (soporta entidades multi-código, ej. Car Equip QUT0867+HIT0714); comisionista = single.
+- **Login multi-dominio:** `ALLOWED_DOMAIN` (string) → `ALLOWED_DOMAINS` (lista) = `['novagnc.com.ar','sorvicor.com.ar']`. Habilitado para Vanessa Urquia (`vurquia@sorvicor.com.ar`, coord_obleas). `hd=*` en el consent.
+- **OJO — el login sigue siendo solo por dominio + auto-create** (no gobierna el panel). Ariel quiere que el panel gobierne el acceso de todas las apps → **encargo CEO-64** dejado (`agente-ceo/encargos/pendientes/`). Cuando el CEO defina la convención, obleas recibe un encargo para reemplazar el gate por-dominio por el chequeo contra el panel + dejar de auto-crear.
+- **Idea OB-6** (`encargos/ideas/`): definir canal para enviar el PDF de calidad al comisionista (hoy se baja y se manda a mano; no hay canal automático).
+- **Deuda pre-existente (Ariel la iba a definir):** `sistema-obleas/encargos/` está gitignored en el repo padre y no pertenece al subrepo `app/` → los encargos de este proyecto quedan fuera de git (sin trazabilidad versionada). Decisión pendiente de Ariel.
+
 ### Estado al cierre 2026-07-29
 Sesión de ajustes al import de InfoSys + varios fixes (todo desplegado y verificado en producción):
 - **Import InfoSys: Original ≠ Filtrado.** Sacado el `yaFiltrado:true` → ahora Original = todos los talleres Nova (todos los comisionistas), Filtrado = comisionista propio. "Revisar Teléfonos" y "Ranking" leen del set filtrado. Agosto real: Original 1285 / Filtrado 464 / excluidos 821 (coincide con el 8-2026 del CSV).
