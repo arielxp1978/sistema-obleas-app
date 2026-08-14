@@ -150,16 +150,19 @@ function phVenceDe(cilindros) {
   return min;
 }
 
-// Clasifica el vencimiento POR CONTACTO (encargo OB-4):
-//   oblea_y_ph    → el PH vence antes del próximo aniversario de la oblea (ya vencido o dentro
-//                   de los próximos 12 meses). Es el aviso fuerte (mayor $$$). Ventana definida
-//                   por Ariel 2026-08-13.
-//   solo_oblea    → el PH todavía tiene vigencia más allá del próximo aniversario.
+// Clasifica el vencimiento POR CONTACTO en 3 grupos (encargo OB-4, regla de Ariel 2026-08-14).
+// Todas las patentes del período tienen la oblea venciendo el mes. Se separan por la PH MÁS
+// CERCANA (el mínimo entre sus cilindros, ver phVenceDe), medida contra el venc. de la oblea:
+//   ph_urgente    → PH vence dentro de los próximos 6 meses (incluye ya vencida). Aviso más fuerte.
+//   ph            → PH vence entre el mes 7 y el 12.
+//   solo_oblea    → PH vence después del mes 12 (solo se avisa la oblea).
 //   ph_desconocido→ falta el dato del cilindro (ej. período cargado por CSV, que no trae cilindros).
 function clasificarVencimiento(obleaVenc, phVence) {
   if (!phVence || !obleaVenc) return 'ph_desconocido';
-  const proxAniversario = new Date(Date.UTC(obleaVenc.getUTCFullYear() + 1, obleaVenc.getUTCMonth(), obleaVenc.getUTCDate()));
-  return phVence < proxAniversario ? 'oblea_y_ph' : 'solo_oblea';
+  const mas = (n) => new Date(Date.UTC(obleaVenc.getUTCFullYear(), obleaVenc.getUTCMonth() + n, obleaVenc.getUTCDate()));
+  if (phVence <= mas(6)) return 'ph_urgente';
+  if (phVence <= mas(12)) return 'ph';
+  return 'solo_oblea';
 }
 
 // Da forma al registro que consume el frontend (mismo shape para CSV y para base)

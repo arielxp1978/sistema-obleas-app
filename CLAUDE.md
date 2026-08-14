@@ -398,17 +398,18 @@ GET /api/base/importar?mes=YYYY-MM&tipo=todos|oblea|ph
 
 Primer slice del stack CEO-61 (inyectar contactos de obleas a ManyChat con tags). Este proyecto produce **el dato**; la inyección por API la hace GP-37 (organizacion-gp5). Diseño rector: `agente-ceo/disenos/obleas-manychat-broadcast/DISENO.md`.
 
-### Clasificación por contacto — `tipo_vencimiento`
-Al importar desde InfoSys, cada contacto se clasifica según si en el período vence **solo la oblea** o **oblea + PH** (PH = prueba hidráulica del cilindro, el aviso de mayor $$$):
-- `oblea_y_ph` — el PH vence **antes del próximo aniversario de la oblea** (ya vencido o dentro de los próximos 12 meses). Ventana definida por Ariel 2026-08-13.
-- `solo_oblea` — el PH sigue vigente más allá del próximo aniversario.
+### Clasificación por contacto — `tipo_vencimiento` (3 grupos)
+Al importar desde InfoSys, cada contacto se clasifica según la **PH más cercana** (el mínimo entre sus cilindros — una patente puede tener 3+), medida contra el vencimiento de la oblea (regla de Ariel 2026-08-14):
+- `ph_urgente` — PH vence **dentro de los próximos 6 meses** (incluye ya vencida). Aviso más fuerte ($$$).
+- `ph` — PH vence **entre el mes 7 y el 12**.
+- `solo_oblea` — PH vence **después del mes 12** (solo se avisa la oblea).
 - `ph_desconocido` — falta el dato del cilindro (ej. período cargado por **CSV**, que no trae cilindros; solo el import InfoSys los trae).
+- **Referencia agosto 2026** (audiencia filtrada 464): `ph_urgente` 162 · `ph` 57 · `solo_oblea` 245. Original (1285): 389 / 175 / 721.
 
 **Cálculo del PH (server.js):**
 - Los cilindros vienen en `nova_operaciones.datos_raw._cilindros[]` (poblados desde el backfill del ES-19, ~99%). Cada uno trae `CUPHANO` (año 2 díg del último PH) y `CUPHMES` (mes).
 - **PH vence = último PH + 5 años** (estándar ENARGAS para cilindros GNC, confirmado con Ariel). Se toma el **más próximo** entre todos los cilindros del vehículo.
-- Helpers: `phVenceDe(cilindros)` y `clasificarVencimiento(obleaVenc, phVence)`. El campo se calcula en el mapeo de `/api/base/importar` y viaja como `_phVence` (ISO) + `_tipoVencimiento` en cada registro (via `mapRegistro`), así queda guardado en el período JSON.
-- **Referencia agosto 2026:** filtrado 464 → `solo_oblea` 245 / `oblea_y_ph` 219 (todos con dato de cilindro).
+- Helpers: `phVenceDe(cilindros)` (mínimo entre cilindros) y `clasificarVencimiento(obleaVenc, phVence)`. El campo se calcula en el mapeo de `/api/base/importar` y viaja como `_phVence` (ISO) + `_tipoVencimiento` en cada registro (via `mapRegistro`), así queda guardado en el período JSON.
 
 ### Endpoint de consumo (lo lee GP-37/n8n)
 ```
