@@ -394,6 +394,35 @@ GET /api/base/importar?mes=YYYY-MM&tipo=todos|oblea|ph
 - Por eso el frontend tiene `const MOSTRAR_PH = false` en `public/index.html`: hoy trae **todo como obleas** (oculta el selector de tipo y la columna PH). El backend igual calcula `_tipoGestion` (queda listo).
 - **Cuando ES-12 se complete** (InfoSys manda CUPH*) → poner `MOSTRAR_PH = true` y se activa la separación obleas/PH real. Alternativa sin esperar: PH está en `historial_obleas_datos.datos->cilindros[].fecha_crpc` (scan ENARGAS).
 
+## Export a ManyChat + clasificación oblea vs oblea+PH por contacto (OB-4 — 2026-08-13)
+
+Primer slice del stack CEO-61 (inyectar contactos de obleas a ManyChat con tags). Este proyecto produce **el dato**; la inyección por API la hace GP-37 (organizacion-gp5). Diseño rector: `agente-ceo/disenos/obleas-manychat-broadcast/DISENO.md`.
+
+### Clasificación por contacto — `tipo_vencimiento`
+Al importar desde InfoSys, cada contacto se clasifica según si en el período vence **solo la oblea** o **oblea + PH** (PH = prueba hidráulica del cilindro, el aviso de mayor $$$):
+- `oblea_y_ph` — el PH vence **antes del próximo aniversario de la oblea** (ya vencido o dentro de los próximos 12 meses). Ventana definida por Ariel 2026-08-13.
+- `solo_oblea` — el PH sigue vigente más allá del próximo aniversario.
+- `ph_desconocido` — falta el dato del cilindro (ej. período cargado por **CSV**, que no trae cilindros; solo el import InfoSys los trae).
+
+**Cálculo del PH (server.js):**
+- Los cilindros vienen en `nova_operaciones.datos_raw._cilindros[]` (poblados desde el backfill del ES-19, ~99%). Cada uno trae `CUPHANO` (año 2 díg del último PH) y `CUPHMES` (mes).
+- **PH vence = último PH + 5 años** (estándar ENARGAS para cilindros GNC, confirmado con Ariel). Se toma el **más próximo** entre todos los cilindros del vehículo.
+- Helpers: `phVenceDe(cilindros)` y `clasificarVencimiento(obleaVenc, phVence)`. El campo se calcula en el mapeo de `/api/base/importar` y viaja como `_phVence` (ISO) + `_tipoVencimiento` en cada registro (via `mapRegistro`), así queda guardado en el período JSON.
+- **Referencia agosto 2026:** filtrado 464 → `solo_oblea` 245 / `oblea_y_ph` 219 (todos con dato de cilindro).
+
+### Endpoint de consumo (lo lee GP-37/n8n)
+```
+GET /api/export/manychat?periodo=<id>     (ej. periodo=8-2026)
+Header: X-API-Key: <MANYCHAT_EXPORT_API_KEY>
+```
+- Auth por **API key** (no sesión) — chequeada en `authMiddleware` para paths `/api/export/*`. La key está en `MANYCHAT_EXPORT_API_KEY` (env, con fallback en código como dalegas). **Overridear en `.env` de S18 si se quiere.**
+- Lee un período **GUARDADO** (tiene que importarse desde InfoSys y guardarse 💾). Devuelve la **audiencia de broadcast** (comisionista propio) con **solo teléfonos WhatsApp válidos** (`telWhatsappValido`, prioriza la corrección manual de Yhonny `UTELEFONO_FINAL`).
+- Respuesta: `{ ok, periodo, periodo_label, generado_en, total, resumen_tipo_vencimiento, contactos: [{ nombre, telefono(549…), patente, marca, modelo, ano, tipo_vencimiento, taller, taller_nombre, periodo }] }`.
+- **`nombre`** = `UAPEYNOM` tal cual (InfoSys lo trae como "APELLIDO NOMBRE" en un solo campo; no se separa apellido para no romper apellidos compuestos). Si GP-37 necesita el split, lo hace del lado del consumidor.
+
+### Contrato para GP-37
+GP-37 llama al endpoint con la key, mapea `tipo_vencimiento` → tags de ManyChat (`Nova Obleas` / `Nova PH`), `periodo` → tag de mes, `taller` → `Taller Sorvi`/`Taller GP5`. sistema-obleas **no** decide tags — solo entrega el dato.
+
 ## Pendientes conocidos
 
 1. **Import directo desde InfoSys** — ✅ **funcionando (2026-07-29).** El feed ya trae vendedor (`GNCOBS1`), comisionista (`GNCOBS3`) y nombre (`subtaller_nombre`), así que el import filtra y muestra igual que el CSV. ES-16 sustancialmente cumplido. Verificar con Ariel si se puede cerrar ES-16 del lado de Enargas Scrap y dejar de subir CSV a mano.

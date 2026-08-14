@@ -5,7 +5,7 @@ const path = require('path');
 const crypto = require('crypto');
 const fs = require('fs');
 const { Pool } = require('pg');
-const { procesarCompleto, procesarRows, normalizarLocalidad, parseCSV, dividirArchivos, canalLabel, TALLERES_PROPIOS } = require('./lib/procesar');
+const { procesarCompleto, procesarRows, normalizarLocalidad, parseCSV, dividirArchivos, canalLabel, telWhatsappValido, TALLERES_PROPIOS } = require('./lib/procesar');
 
 // Las megatablas de ENARGAS/InfoSys vienen en latin-1 (ISO-8859). Si se leen como utf8 se
 // corrompen ñ/tildes en nombres. Detectamos: si al decodificar utf8 aparece el carácter de
@@ -26,6 +26,8 @@ const COMUNICACIONES_HUB_URL = process.env.COMUNICACIONES_HUB_URL || 'https://n8
 const DALEGAS_API_URL = process.env.DALEGAS_API_URL || 'https://api.dalegas.com.ar';
 const DALEGAS_API_KEY = process.env.DALEGAS_API_KEY || 'AppNovaSecret2026';
 const INFORME_OBLEAS_API_KEY = process.env.INFORME_OBLEAS_API_KEY || 'SistemaObleas2026';
+// API key del endpoint de export a ManyChat (lo consume GP-37/n8n sin sesión). Ver /api/export/manychat.
+const MANYCHAT_EXPORT_API_KEY = process.env.MANYCHAT_EXPORT_API_KEY || 'NovaObleasManychat2026';
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 const GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI || 'http://192.168.0.18:3080/auth/google/callback';
@@ -122,6 +124,44 @@ const SQL_VENC_EXPR = `
     ELSE NULL
   END`;
 
+// Nombres legibles de taller (misma fuente que el frontend) y meses, para el export a ManyChat.
+const TALLER_NOMBRES = { 'IRT0550': 'Nova Gral Paz', 'HIT0797': 'Nova R20', 'QUT0867': 'Grupo P5' };
+const MESES_NOMBRE = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+function periodoLabel(id) {
+  const [mes, anio] = String(id || '').split('-');
+  const m = parseInt(mes, 10);
+  return (MESES_NOMBRE[m] || mes) + (anio ? ' ' + anio : '');
+}
+
+// Vencimiento del PH (prueba hidráulica) de un vehículo = el más próximo entre sus cilindros.
+// Cada cilindro (nova_operaciones.datos_raw._cilindros) trae la fecha del ÚLTIMO PH en CUPHANO
+// (año 2 díg) / CUPHMES (mes). El PH vence a los 5 años (estándar ENARGAS para cilindros GNC,
+// confirmado con Ariel 2026-08-13). Devuelve un Date (UTC, día 1 del mes) o null si no hay dato.
+function phVenceDe(cilindros) {
+  if (!Array.isArray(cilindros) || !cilindros.length) return null;
+  let min = null;
+  for (const c of cilindros) {
+    const a = parseInt(c && c.CUPHANO, 10);
+    const m = parseInt(c && c.CUPHMES, 10);
+    if (!Number.isFinite(a) || !Number.isFinite(m) || m < 1 || m > 12) continue;
+    const venc = new Date(Date.UTC(2000 + a + 5, m - 1, 1)); // último PH + 5 años
+    if (min === null || venc < min) min = venc;
+  }
+  return min;
+}
+
+// Clasifica el vencimiento POR CONTACTO (encargo OB-4):
+//   oblea_y_ph    → el PH vence antes del próximo aniversario de la oblea (ya vencido o dentro
+//                   de los próximos 12 meses). Es el aviso fuerte (mayor $$$). Ventana definida
+//                   por Ariel 2026-08-13.
+//   solo_oblea    → el PH todavía tiene vigencia más allá del próximo aniversario.
+//   ph_desconocido→ falta el dato del cilindro (ej. período cargado por CSV, que no trae cilindros).
+function clasificarVencimiento(obleaVenc, phVence) {
+  if (!phVence || !obleaVenc) return 'ph_desconocido';
+  const proxAniversario = new Date(Date.UTC(obleaVenc.getUTCFullYear() + 1, obleaVenc.getUTCMonth(), obleaVenc.getUTCDate()));
+  return phVence < proxAniversario ? 'oblea_y_ph' : 'solo_oblea';
+}
+
 // Da forma al registro que consume el frontend (mismo shape para CSV y para base)
 function mapRegistro(r) {
   return {
@@ -138,6 +178,7 @@ function mapRegistro(r) {
     UTELEFONO: r.UTELEFONO, UTELEFONO_ERROR: r.UTELEFONO_ERROR,
     UOBLEANEW: r.UOBLEANEW, UOBLEAANT: r.UOBLEAANT,
     _tipoGestion: r._tipoGestion,
+    _phVence: r._phVence, _tipoVencimiento: r._tipoVencimiento,
     SUBTAL: r.SUBTAL
   };
 }
@@ -282,6 +323,12 @@ app.get('/auth/google/callback', async (req, res) => {
 
 // Middleware de autenticación
 function authMiddleware(req, res, next) {
+  // Endpoints de export máquina-a-máquina (los consume GP-37/n8n): auth por API key, sin sesión.
+  if (req.path.startsWith('/api/export/')) {
+    const key = req.headers['x-api-key'];
+    if (key && key === MANYCHAT_EXPORT_API_KEY) return next();
+    return res.status(401).json({ error: 'API key inválida o ausente (header X-API-Key)' });
+  }
   const token = extraerToken(req);
   const sesion = sessions[token];
   console.log('[auth] path:', req.path, '| token:', token ? token.slice(0,8)+'...' : 'NINGUNO', '| sesion:', sesion ? 'OK' : 'NO ENCONTRADA', '| sessions activas:', Object.keys(sessions).length);
@@ -630,7 +677,11 @@ app.get('/api/base/importar', async (req, res) => {
       const esPH = row.cod === 'X';
       const v = row.venc ? new Date(row.venc) : null;
       const fmtFecha = v ? `${v.getUTCDate()}/${v.getUTCMonth() + 1}/${v.getUTCFullYear()}` : '';
+      // Clasificación por contacto oblea vs oblea+PH (OB-4), a partir de los cilindros del vehículo.
+      const phVence = phVenceDe(d._cilindros);
       return {
+        _phVence: phVence ? phVence.toISOString().slice(0, 10) : null,
+        _tipoVencimiento: clasificarVencimiento(v, phVence),
         UFECVENHAB: fmtFecha,
         UDOMINIO: d.UDOMINIO || row.patente || '',
         UOBLEANEW: d.UOBLEANEW || row.oblea_nueva || '',
@@ -693,6 +744,55 @@ app.get('/api/base/importar', async (req, res) => {
     });
   } catch (e) {
     console.error('[base/importar] error:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ============================================================
+// EXPORT A MANYCHAT (encargo OB-4) — lo consume GP-37/n8n para inyectar contactos
+// ============================================================
+// Devuelve la lista de contactos de un período GUARDADO (audiencia del broadcast = comisionista
+// propio, con las correcciones de teléfono que hizo Yhonny) más la clasificación por contacto
+// tipo_vencimiento ∈ { solo_oblea, oblea_y_ph, ph_desconocido }. Auth por X-API-Key (authMiddleware).
+// El período tiene que haberse importado desde InfoSys y guardado (💾): el CSV no trae cilindros,
+// así que un período subido por CSV sale como ph_desconocido.
+app.get('/api/export/manychat', (req, res) => {
+  try {
+    const periodo = String(req.query.periodo || '').trim();
+    if (!periodo) return res.status(400).json({ error: 'Falta el parámetro "periodo" (ej. 8-2026)' });
+    const data = leerPeriodo(periodo);
+    if (!data) return res.status(404).json({ error: `Período "${periodo}" no encontrado. Importalo desde InfoSys y guardalo primero.` });
+
+    const registros = data.registros || [];
+    const contactos = [];
+    for (const r of registros) {
+      const wa = telWhatsappValido(r);   // solo teléfonos WhatsApp válidos (549…), como el export a CSV
+      if (!wa) continue;
+      contactos.push({
+        nombre: (r.UAPEYNOM || '').trim(),   // InfoSys lo trae como "APELLIDO NOMBRE" en un solo campo
+        telefono: wa,
+        patente: r.UDOMINIO || '',
+        marca: r.UMARCA || '',
+        modelo: r.UMODELO || '',
+        ano: r.UANO || '',
+        tipo_vencimiento: r._tipoVencimiento || 'ph_desconocido',
+        taller: r.TCODTAL || '',
+        taller_nombre: TALLER_NOMBRES[r.TCODTAL] || r.TCODTAL || '',
+        periodo: periodoLabel(periodo)
+      });
+    }
+    const resumen = contactos.reduce((a, c) => { a[c.tipo_vencimiento] = (a[c.tipo_vencimiento] || 0) + 1; return a; }, {});
+    res.json({
+      ok: true,
+      periodo,
+      periodo_label: periodoLabel(periodo),
+      generado_en: new Date().toISOString(),
+      total: contactos.length,
+      resumen_tipo_vencimiento: resumen,
+      contactos
+    });
+  } catch (e) {
+    console.error('[export/manychat] error:', e);
     res.status(500).json({ error: e.message });
   }
 });
