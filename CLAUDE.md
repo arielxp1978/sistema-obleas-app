@@ -428,8 +428,10 @@ GP-37 llama al endpoint con la key, mapea `tipo_vencimiento` → tags de ManyCha
 
 Pantalla para auditar la calidad del teléfono que carga un taller (o un comisionista bajo un taller nuestro), y bajar un informe PDF para pedirle que corrija. Encargo `encargos/hechos/…-OB-3-…-DONE.md`.
 
-- **UI:** `public/calidad-contactos.html` (link en la navbar de index.html). Scope taller/comisionista + código + año → Generar → render del documento oficial → Descargar PDF.
+- **UI:** `public/calidad-contactos.html` (link en la navbar de index.html). Scope taller/comisionista + **buscador** + año → Generar → render del documento oficial → Descargar PDF.
+- **Buscador (combo):** en vez de tipear el código a mano, se busca por código o nombre. Taller = **multi-select con chips** (una entidad puede tener varios códigos, ej. Car Equip = QUT0867 + HIT0714 → `id=QUT0867,HIT0714`); comisionista = single. Con fallback a texto libre + Enter si el listado no carga.
 - **Proxy:** `GET /api/calidad-contactos?scope=taller|comisionista&id=&anio=` en server.js → reenvía a `api.dalegas.com.ar/api/calidad_contactos` (**fuente única del cálculo = Enargas Scrap**; NO recalcular acá). API key en el server (`CALIDAD_API_KEY`, fallback a `DALEGAS_API_KEY`), nunca en el browser.
+- **Opciones del buscador:** `GET /api/calidad-contactos/opciones?scope=taller|comisionista` → lista {id, nombre, n} desde `nova_operaciones` (solo lectura). Taller = todos los talleres (con flag `es_nova`); comisionista = solo los que operan bajo talleres Nova (`NOVA_TALLERES`). Es enumeración de entidades, NO el cálculo de calidad.
 - **PDF:** html2pdf.js (cdnjs). Filename incluye `ref_interna`: comisionista → `informe-contactos-{anio}-{ref_interna}.pdf`, taller → `…-taller-{codigos}.pdf`.
 - **Regla de discreción (CRÍTICA):** en el reporte por comisionista el **cuerpo solo muestra `taller_nombre`**; el código del comisionista (`ref_interna`) va SOLO en el nombre del archivo, nunca impreso. ENARGAS no distingue que esas operaciones son de un taller tercero bajo el nuestro; el documento no puede delatarlo. El correlativo `Informe N.º` es neutro (fecha), no revela nada.
 - **Envío al comisionista:** NO automatizado (no hay canal para mandar un PDF a un comisionista externo). Se baja el PDF y se manda a mano. Idea `OB-6` para definir canal.
