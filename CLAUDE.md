@@ -6,7 +6,7 @@ Procesador de CSVs de obleas GNC exportados de ENARGAS. Clasifica vehículos seg
 
 **URL pública:** https://obleas.novagnc.com.ar  
 **GitHub:** arielxp1978/sistema-obleas-app  
-**Acceso:** Login Google @novagnc.com.ar (ydiaz, arielpalomeque)
+**Acceso:** Login Google `@novagnc.com.ar` o `@sorvicor.com.ar` (dominios en `ALLOWED_DOMAINS`, server.js). El login **solo valida el dominio del email** — NO consulta el panel: cualquier cuenta de esos dominios entra (si no está en `panel.usuarios`, se auto-crea como `operador`). El acceso del panel no gobierna esta app. Sorvicor habilitado 2026-08-14 para Vanessa Urquia (coord_obleas). Hay además una "clave de emergencia" compartida (`APP_CLAVE`) que saltea el dominio.
 
 ---
 
