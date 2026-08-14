@@ -34,7 +34,8 @@ const MANYCHAT_EXPORT_API_KEY = process.env.MANYCHAT_EXPORT_API_KEY || 'NovaOble
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 const GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI || 'http://192.168.0.18:3080/auth/google/callback';
-const ALLOWED_DOMAIN = 'novagnc.com.ar';
+// Dominios habilitados para login con Google. Sorvicor agregado 2026-08-14 (Vanessa Urquia, coord_obleas).
+const ALLOWED_DOMAINS = ['novagnc.com.ar', 'sorvicor.com.ar'];
 
 // Pool PostgreSQL cdp_nova (solo para verificar/crear usuarios Google)
 const pool = new Pool({
@@ -245,7 +246,7 @@ app.get('/auth/google', (req, res) => {
     + '&scope=' + encodeURIComponent('openid email profile')
     + '&access_type=offline'
     + '&prompt=select_account'
-    + '&hd=' + ALLOWED_DOMAIN;
+    + '&hd=*'; // hint: cualquier cuenta Google Workspace (filtra gmail personal); el whitelist real se valida server-side
   res.redirect(url);
 });
 
@@ -284,7 +285,7 @@ app.get('/auth/google/callback', async (req, res) => {
 
     // Verificar dominio
     const domain = googleUser.email.split('@')[1];
-    if (domain !== ALLOWED_DOMAIN) return res.redirect('/login.html?error=domain_not_allowed');
+    if (!ALLOWED_DOMAINS.includes(domain)) return res.redirect('/login.html?error=domain_not_allowed');
 
     // Buscar o crear usuario en panel.usuarios (cdp_nova)
     let nombre = googleUser.name || googleUser.email.split('@')[0];
