@@ -331,9 +331,11 @@ input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 2px rg
   </div>
 
   <!-- ===== Archivos obleas / PH + descarga ZIP (respaldo manual) ===== -->
-  <div class="card">
+  <div class="card" id="cardArchivosZip">
     <div class="flex justify-between items-center mb-4" style="flex-wrap:wrap;gap:12px;">
-      <h3 style="border:none;margin:0;padding:0;">🔖 Obleas y 🧪 PH — archivos y ZIP</h3>
+      <h3 style="border:none;margin:0;padding:0;cursor:pointer;" onclick="toggleArchivos()" title="Mostrar/ocultar">
+        <span id="chevArchivos" style="color:var(--text-sec);">▾</span> 🔖 Obleas y 🧪 PH — archivos y ZIP
+      </h3>
       <div class="flex gap-2 items-center" style="flex-wrap:wrap;">
         <label style="font-size:.85em;color:var(--text-sec);display:flex;align-items:center;gap:6px;">
           Teléfonos por archivo:
@@ -343,11 +345,13 @@ input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 2px rg
         <button class="btn btn-success" onclick="descargarZip()">⬇️ Descargar ZIP</button>
       </div>
     </div>
-    <p style="font-size:.82em;color:var(--text-sec);margin-bottom:14px;">
-      Respaldo manual (por si no se usa la inyección automática de arriba). Solo entran teléfonos válidos
-      (los "0", "11111" y basura quedan afuera). Columnas: nombre · marca · modelo · patente · teléfono.
-    </p>
-    <div id="listaArchivos"></div>
+    <div id="archivosBody">
+      <p style="font-size:.82em;color:var(--text-sec);margin-bottom:14px;">
+        Respaldo manual (por si no se usa la inyección automática de arriba). Solo entran teléfonos válidos
+        (los "0", "11111" y basura quedan afuera). Columnas: nombre · marca · modelo · patente · teléfono.
+      </p>
+      <div id="listaArchivos"></div>
+    </div>
   </div>
 </div>
 
@@ -1187,6 +1191,21 @@ function inyeccionRequisitos() {
   return true;
 }
 
+// Colapsar/expandir la card de archivos obleas/PH+ZIP. Al hacer Preview se colapsa sola
+// para que la tabla no moleste mientras se revisa el reparto de la inyección.
+function setArchivosColapsado(colapsar) {
+  const body = document.getElementById('archivosBody');
+  const chev = document.getElementById('chevArchivos');
+  if (!body) return;
+  body.style.display = colapsar ? 'none' : 'block';
+  if (chev) chev.textContent = colapsar ? '▸' : '▾';
+}
+function toggleArchivos() {
+  const body = document.getElementById('archivosBody');
+  if (!body) return;
+  setArchivosColapsado(body.style.display !== 'none');
+}
+
 async function previewInyeccion() {
   if (!inyeccionRequisitos()) return;
   const status = document.getElementById('inyStatus');
@@ -1204,6 +1223,7 @@ async function previewInyeccion() {
     const data = await resp.json();
     if (!resp.ok || !data.ok) throw new Error(data.error || 'No se pudo generar el preview');
     renderInyeccionPlan(data.plan);
+    setArchivosColapsado(true);   // colapsar la tabla de archivos para que no moleste la vista
     status.textContent = '✅ Preview listo — revisá el reparto y confirmá.'; status.style.color = '#34a853';
     btnExec.classList.remove('hidden');
   } catch (e) {
@@ -1216,9 +1236,15 @@ function renderInyeccionPlan(plan) {
   const grupos = (plan.porGrupo || []).map(g => {
     const vs = Object.keys(g.v).sort((a, b) => parseInt(a.slice(1)) - parseInt(b.slice(1)))
       .map(k => `<span style="display:inline-block;background:rgba(66,133,244,.12);border:1px solid rgba(66,133,244,.3);border-radius:6px;padding:1px 7px;margin:2px;font-size:.82em;">${esc(k)}: ${g.v[k]}</span>`).join('');
+    // Etiquetas completas del grupo (grupo + mes + taller + "Aviso Oblea" + V*). Las provee GP-37
+    // en el plan (porGrupo[].tags). Si todavía no las manda, se muestran solo las V* como antes.
+    const tags = Array.isArray(g.tags) && g.tags.length
+      ? `<div style="margin-top:8px;font-size:.8em;color:var(--text-sec);"><strong>Etiquetas:</strong> ${g.tags.map(esc).join(' · ')}</div>`
+      : '';
     return `<div style="border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:8px;">
       <div style="font-weight:600;">${esc(g.grupo)} <span style="font-weight:400;color:var(--text-sec);">— ${g.total} contactos</span></div>
       <div style="margin-top:4px;">${vs}</div>
+      ${tags}
     </div>`;
   }).join('');
   const avisos = [];
