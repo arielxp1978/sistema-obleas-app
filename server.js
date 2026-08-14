@@ -648,6 +648,54 @@ app.get('/api/calidad-contactos', async (req, res) => {
   }
 });
 
+// Opciones para los buscadores de la pantalla de calidad de contactos.
+// Lee nova_operaciones (solo lectura; la tabla la mantiene Enargas Scrap) para
+// enumerar talleres y comisionistas con su nombre. NO es el cálculo de calidad
+// (eso vive en el endpoint upstream) — solo un listado de entidades para el picker.
+app.get('/api/calidad-contactos/opciones', async (req, res) => {
+  try {
+    const scope = req.query.scope || '';
+    if (scope === 'taller') {
+      const q = `
+        SELECT taller_codigo AS id,
+               max(datos_raw->>'TRAZSOC') AS nombre,
+               count(*)::int AS n
+        FROM nova_operaciones
+        WHERE coalesce(taller_codigo,'') <> ''
+        GROUP BY taller_codigo
+        ORDER BY n DESC`;
+      const r = await poolEnargas.query(q);
+      const opciones = r.rows.map(x => ({
+        id: x.id, nombre: x.nombre || '(sin nombre)', n: x.n,
+        es_nova: NOVA_TALLERES.includes(x.id)
+      }));
+      return res.json({ ok: true, scope, opciones });
+    }
+    if (scope === 'comisionista') {
+      // Solo comisionistas que operan bajo un taller nuestro (audiencia del reporte).
+      const q = `
+        SELECT datos_raw->>'GNCOBS3' AS id,
+               max(datos_raw->>'subtaller_nombre') AS nombre,
+               max(datos_raw->>'TRAZSOC') AS taller,
+               count(*)::int AS n
+        FROM nova_operaciones
+        WHERE coalesce(datos_raw->>'GNCOBS3','') <> ''
+          AND taller_codigo = ANY($1)
+        GROUP BY datos_raw->>'GNCOBS3'
+        ORDER BY n DESC`;
+      const r = await poolEnargas.query(q, [NOVA_TALLERES]);
+      const opciones = r.rows.map(x => ({
+        id: x.id, nombre: x.nombre || '(sin nombre)', taller: x.taller || '', n: x.n
+      }));
+      return res.json({ ok: true, scope, opciones });
+    }
+    return res.status(400).json({ error: "scope inválido (esperado: 'taller' o 'comisionista')" });
+  } catch (e) {
+    console.error('[calidad-contactos/opciones] error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ============================================================
 // IMPORTACIÓN DESDE BASE (nova_operaciones / InfoSys)
 // ============================================================

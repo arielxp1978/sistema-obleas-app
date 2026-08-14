@@ -29,16 +29,35 @@ header .links a:hover, header .links button:hover { background:rgba(255,255,255,
 .btn-success { background:var(--success); color:#fff; }
 .btn-success:hover { background:#2c9247; }
 .btn:disabled { opacity:.5; cursor:not-allowed; }
-.form-row { display:flex; gap:14px; flex-wrap:wrap; align-items:flex-end; }
+.form-row { display:flex; gap:14px; flex-wrap:wrap; align-items:flex-start; }
 .form-group { display:flex; flex-direction:column; gap:4px; }
 .form-group label { font-size:.82em; font-weight:500; color:var(--text-sec); }
 .form-group .hint { font-size:.72em; color:var(--text-sec); }
 input, select { padding:8px 12px; border:1px solid var(--border); border-radius:6px; font-size:.9em; font-family:inherit; }
 input:focus, select:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 2px rgba(26,115,232,.15); }
-input#idInput { min-width:240px; }
 .hidden { display:none !important; }
+
+/* Combo buscador */
+.combo { position:relative; width:360px; max-width:100%; }
+.combo-box { display:flex; flex-wrap:wrap; gap:6px; align-items:center; border:1px solid var(--border); border-radius:6px; padding:5px 8px; background:#fff; min-height:38px; cursor:text; }
+.combo-box:focus-within { border-color:var(--primary); box-shadow:0 0 0 2px rgba(26,115,232,.15); }
+.combo-box input { flex:1; min-width:120px; border:none; outline:none; box-shadow:none; padding:3px 2px; font-size:.9em; }
+.chip { display:inline-flex; align-items:center; gap:6px; background:#e8f0fe; color:#174ea6; border:1px solid #aecbfa; border-radius:14px; padding:2px 6px 2px 10px; font-size:.8em; font-weight:600; }
+.chip .code { opacity:.7; font-weight:500; }
+.chip .x { cursor:pointer; border:none; background:#c7dbfb; color:#174ea6; border-radius:50%; width:16px; height:16px; line-height:1; font-size:.8em; display:inline-flex; align-items:center; justify-content:center; }
+.chip .x:hover { background:#a9c8f7; }
+.combo-list { position:absolute; z-index:20; top:calc(100% + 4px); left:0; right:0; background:#fff; border:1px solid var(--border); border-radius:8px; box-shadow:0 4px 16px rgba(0,0,0,.14); max-height:300px; overflow-y:auto; }
+.combo-item { padding:8px 12px; cursor:pointer; display:flex; justify-content:space-between; align-items:baseline; gap:10px; border-bottom:1px solid #f1f1f1; }
+.combo-item:last-child { border-bottom:none; }
+.combo-item:hover, .combo-item.active { background:#f1f6ff; }
+.combo-item .nm { font-size:.88em; color:var(--text); }
+.combo-item .nm b { color:#174ea6; }
+.combo-item .meta { font-size:.72em; color:var(--text-sec); white-space:nowrap; }
+.combo-item .nova { display:inline-block; margin-left:6px; font-size:.68em; background:#e6f4ea; color:#1e8e3e; border:1px solid #b7e1cd; border-radius:10px; padding:0 6px; font-weight:700; }
+.combo-foot { padding:7px 12px; font-size:.74em; color:var(--text-sec); background:#fafafa; border-top:1px solid #f1f1f1; }
+.combo-empty { padding:10px 12px; font-size:.82em; color:var(--text-sec); }
+
 .alert { padding:12px 16px; border-radius:var(--radius); font-size:.9em; margin-bottom:16px; }
-.alert-warning { background:#fef7e0; color:#7a4200; border:1px solid #fdd663; }
 .alert-danger { background:#fce8e6; color:#8b1a10; border:1px solid #f5b5ae; }
 .alert-info { background:#e8f0fe; color:#174ea6; border:1px solid #aecbfa; }
 .spinner { display:inline-block; width:26px; height:26px; border:3px solid rgba(26,115,232,.2); border-top-color:var(--primary); border-radius:50%; animation:spin .6s linear infinite; vertical-align:middle; }
@@ -96,15 +115,24 @@ input#idInput { min-width:240px; }
         </select>
       </div>
       <div class="form-group">
-        <label id="idLabel">Código(s) de taller</label>
-        <input type="text" id="idInput" placeholder="QUT0867,HIT0714">
-        <span class="hint" id="idHint">Uno o varios códigos separados por coma.</span>
+        <label id="idLabel">Taller</label>
+        <div class="combo" id="combo">
+          <div class="combo-box" id="comboBox" onclick="document.getElementById('comboSearch').focus()">
+            <!-- chips van acá -->
+            <input type="text" id="comboSearch" placeholder="Buscar por código o nombre…" autocomplete="off">
+          </div>
+          <div class="combo-list hidden" id="comboList"></div>
+        </div>
+        <span class="hint" id="idHint">Elegí uno o más talleres (buscá por código o nombre).</span>
       </div>
       <div class="form-group">
         <label>Año</label>
         <input type="number" id="anioInput" min="2020" max="2100" step="1" style="width:110px;">
       </div>
-      <button class="btn btn-primary" id="btnGenerar" onclick="generar()">Generar</button>
+      <div class="form-group">
+        <label>&nbsp;</label>
+        <button class="btn btn-primary" id="btnGenerar" onclick="generar()">Generar</button>
+      </div>
     </div>
     <div id="comiNota" class="alert alert-info hidden" style="margin:14px 0 0;">
       <strong>Reporte por comisionista:</strong> el documento no imprime el código del comisionista (solo el taller como figura en ENARGAS).
@@ -121,7 +149,7 @@ input#idInput { min-width:240px; }
   <div id="errorBox" class="alert alert-danger hidden"></div>
 
   <div id="placeholder" class="card" style="text-align:center; padding:44px 24px;">
-    <p style="color:var(--text-sec);">Elegí tipo, código y año, y hacé clic en <strong>Generar</strong>.</p>
+    <p style="color:var(--text-sec);">Elegí tipo, buscá el taller o comisionista, poné el año y hacé clic en <strong>Generar</strong>.</p>
   </div>
 
   <!-- Resultado -->
@@ -152,21 +180,10 @@ async function cerrarSesion() {
   window.location.href = '/login';
 }
 
-let ULTIMO = null; // { data, filename }
-
-// Año por defecto = actual
-document.getElementById('anioInput').value = new Date().getFullYear();
-
-function onScopeChange() {
-  const scope = document.getElementById('scopeInput').value;
-  const esComi = scope === 'comisionista';
-  document.getElementById('idLabel').textContent = esComi ? 'Código del comisionista (GNCOBS3)' : 'Código(s) de taller';
-  document.getElementById('idInput').placeholder = esComi ? '550@555' : 'QUT0867,HIT0714';
-  document.getElementById('idHint').textContent = esComi
-    ? 'Código del comisionista tal cual lo usa el sistema (ej. 550@555).'
-    : 'Uno o varios códigos separados por coma.';
-  document.getElementById('comiNota').classList.toggle('hidden', !esComi);
-}
+let ULTIMO = null;                 // { data, filename }
+const OPCIONES = { taller: null, comisionista: null };  // cache por scope
+let SELECCION = [];                 // [{id, nombre}] del scope actual
+let ACTIVE = -1;                    // índice resaltado en la lista
 
 function esc(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, c => (
@@ -174,17 +191,151 @@ function esc(s) {
   ));
 }
 function fmtNum(n) { return (n == null) ? '—' : Number(n).toLocaleString('es-AR'); }
-function pct(part, total) {
-  if (!total) return '0%';
-  return Math.round((Number(part) / Number(total)) * 100) + '%';
-}
+function pct(part, total) { if (!total) return '0%'; return Math.round((Number(part)/Number(total))*100) + '%'; }
 function fechaLarga(d) {
   const meses = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
   return `${d.getDate()} de ${meses[d.getMonth()]} de ${d.getFullYear()}`;
 }
-function sanitizeId(id) {
-  return String(id).replace(/[^A-Za-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+function sanitizeId(id) { return String(id).replace(/[^A-Za-z0-9]+/g, '-').replace(/^-+|-+$/g, ''); }
+function scopeActual() { return document.getElementById('scopeInput').value; }
+function esMulti() { return scopeActual() === 'taller'; }
+
+// Año por defecto = actual
+document.getElementById('anioInput').value = new Date().getFullYear();
+
+async function onScopeChange() {
+  const esComi = scopeActual() === 'comisionista';
+  document.getElementById('idLabel').textContent = esComi ? 'Comisionista' : 'Taller';
+  document.getElementById('idHint').textContent = esComi
+    ? 'Buscá el comisionista por código (ej. 550@555) o nombre.'
+    : 'Elegí uno o más talleres (buscá por código o nombre).';
+  document.getElementById('comboSearch').placeholder = esComi ? 'Buscar por código o nombre…' : 'Buscar por código o nombre…';
+  document.getElementById('comiNota').classList.toggle('hidden', !esComi);
+  SELECCION = [];
+  renderChips();
+  document.getElementById('comboSearch').value = '';
+  cerrarLista();
+  await cargarOpciones(scopeActual());
 }
+
+async function cargarOpciones(scope) {
+  if (OPCIONES[scope]) return OPCIONES[scope];
+  try {
+    const r = await authFetch('/api/calidad-contactos/opciones?scope=' + scope);
+    if (!r) return [];
+    const data = await r.json();
+    OPCIONES[scope] = (r.ok && Array.isArray(data.opciones)) ? data.opciones : [];
+  } catch (e) {
+    OPCIONES[scope] = [];
+  }
+  return OPCIONES[scope];
+}
+
+function renderChips() {
+  const box = document.getElementById('comboBox');
+  box.querySelectorAll('.chip').forEach(c => c.remove());
+  const input = document.getElementById('comboSearch');
+  SELECCION.forEach((s, i) => {
+    const chip = document.createElement('span');
+    chip.className = 'chip';
+    chip.innerHTML = `<span>${esc(s.nombre || s.id)}</span> <span class="code">${esc(s.id)}</span> <button class="x" title="Quitar" onclick="quitarChip(${i});event.stopPropagation();">✕</button>`;
+    box.insertBefore(chip, input);
+  });
+}
+function quitarChip(i) { SELECCION.splice(i, 1); renderChips(); document.getElementById('comboSearch').focus(); }
+
+function filtrar() {
+  const scope = scopeActual();
+  const term = document.getElementById('comboSearch').value.trim().toLowerCase();
+  const yaSel = new Set(SELECCION.map(s => s.id));
+  const todas = OPCIONES[scope] || [];
+  const arr = todas.filter(o => !yaSel.has(o.id) && (
+    !term || o.id.toLowerCase().includes(term) || (o.nombre || '').toLowerCase().includes(term)
+  ));
+  return arr;
+}
+
+function abrirLista() {
+  const arr = filtrar();
+  const scope = scopeActual();
+  const list = document.getElementById('comboList');
+  ACTIVE = -1;
+  if ((OPCIONES[scope] || []).length === 0) {
+    list.innerHTML = `<div class="combo-empty">No se pudo cargar el listado. Escribí el código y presioná Enter para usarlo igual.</div>`;
+    list.classList.remove('hidden'); return;
+  }
+  if (arr.length === 0) {
+    list.innerHTML = `<div class="combo-empty">Sin coincidencias. Presioná Enter para usar lo escrito como código.</div>`;
+    list.classList.remove('hidden'); return;
+  }
+  const MAX = 60;
+  const items = arr.slice(0, MAX).map((o, idx) => {
+    const meta = scope === 'comisionista'
+      ? `${esc(o.taller || '')} · ${fmtNum(o.n)} ops`
+      : `${fmtNum(o.n)} ops`;
+    const nova = (scope === 'taller' && o.es_nova) ? `<span class="nova">NOVA</span>` : '';
+    return `<div class="combo-item" data-idx="${idx}" onclick="elegir(${idx})">
+        <span class="nm"><b>${esc(o.nombre)}</b> — ${esc(o.id)}${nova}</span>
+        <span class="meta">${meta}</span>
+      </div>`;
+  }).join('');
+  const foot = arr.length > MAX ? `<div class="combo-foot">Mostrando ${MAX} de ${arr.length}. Seguí escribiendo para afinar.</div>` : '';
+  list.innerHTML = items + foot;
+  list.classList.remove('hidden');
+  list._filtradas = arr.slice(0, MAX);
+}
+function cerrarLista() { const l = document.getElementById('comboList'); l.classList.add('hidden'); l._filtradas = null; }
+
+function elegir(idx) {
+  const list = document.getElementById('comboList');
+  const arr = list._filtradas || [];
+  const o = arr[idx];
+  if (!o) return;
+  if (esMulti()) {
+    if (!SELECCION.some(s => s.id === o.id)) SELECCION.push({ id: o.id, nombre: o.nombre });
+  } else {
+    SELECCION = [{ id: o.id, nombre: o.nombre }];
+  }
+  renderChips();
+  const inp = document.getElementById('comboSearch');
+  inp.value = '';
+  if (esMulti()) { abrirLista(); inp.focus(); } else { cerrarLista(); }
+}
+
+function agregarRaw() {
+  const inp = document.getElementById('comboSearch');
+  const v = inp.value.trim();
+  if (!v) return false;
+  const item = { id: v, nombre: v };
+  if (esMulti()) { if (!SELECCION.some(s => s.id === v)) SELECCION.push(item); }
+  else { SELECCION = [item]; }
+  renderChips();
+  inp.value = '';
+  cerrarLista();
+  return true;
+}
+
+// Eventos del combo
+document.getElementById('comboSearch').addEventListener('input', abrirLista);
+document.getElementById('comboSearch').addEventListener('focus', abrirLista);
+document.getElementById('comboSearch').addEventListener('keydown', (e) => {
+  const list = document.getElementById('comboList');
+  const items = list.classList.contains('hidden') ? [] : Array.from(list.querySelectorAll('.combo-item'));
+  if (e.key === 'ArrowDown') { e.preventDefault(); if (items.length){ ACTIVE=Math.min(ACTIVE+1,items.length-1); marcarActivo(items);} }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); if (items.length){ ACTIVE=Math.max(ACTIVE-1,0); marcarActivo(items);} }
+  else if (e.key === 'Enter') {
+    e.preventDefault();
+    if (ACTIVE >= 0 && items[ACTIVE]) { elegir(ACTIVE); }
+    else if (items.length === 1) { elegir(0); }
+    else { agregarRaw(); }
+  } else if (e.key === 'Backspace' && !e.target.value && SELECCION.length) {
+    SELECCION.pop(); renderChips();
+  } else if (e.key === 'Escape') { cerrarLista(); }
+});
+function marcarActivo(items) { items.forEach((el,i)=>el.classList.toggle('active', i===ACTIVE)); if(items[ACTIVE]) items[ACTIVE].scrollIntoView({block:'nearest'}); }
+document.addEventListener('click', (e) => { if (!document.getElementById('combo').contains(e.target)) cerrarLista(); });
+
+function buildId() { return SELECCION.map(s => s.id).join(','); }
 
 // Nombre de archivo. Comisionista: usa ref_interna (nunca va en el cuerpo). Taller: usa los códigos.
 function buildFilename(scope, id, anio, data) {
@@ -194,8 +345,6 @@ function buildFilename(scope, id, anio, data) {
   }
   return `informe-contactos-${anio}-taller-${sanitizeId(id)}.pdf`;
 }
-
-// Correlativo neutro para el cuerpo (NO revela comisionista). Basado en fecha de emisión.
 function correlativo(now) {
   const p = n => String(n).padStart(2, '0');
   return `${now.getFullYear()}${p(now.getMonth()+1)}${p(now.getDate())}-${p(now.getHours())}${p(now.getMinutes())}`;
@@ -265,12 +414,14 @@ function show(id) {
 }
 
 async function generar() {
-  const scope = document.getElementById('scopeInput').value;
-  const id = document.getElementById('idInput').value.trim();
+  agregarRaw(); // si dejó texto escrito sin elegir, lo toma como código
+  const scope = scopeActual();
+  const id = buildId();
   const anio = document.getElementById('anioInput').value.trim();
-  if (!id) { alert('Ingresá un código.'); return; }
+  if (!id) { alert('Elegí al menos un ' + (scope === 'comisionista' ? 'comisionista' : 'taller') + '.'); return; }
 
   document.getElementById('btnGenerar').disabled = true;
+  cerrarLista();
   show('cargando');
   try {
     const qs = new URLSearchParams({ scope, id });
@@ -280,7 +431,7 @@ async function generar() {
     const data = await r.json();
     if (!r.ok) {
       const msg = r.status === 404
-        ? 'El endpoint de calidad de contactos todavía no está disponible en el servidor de datos (404). Avisá a Ariel para confirmar el deploy del lado Enargas Scrap.'
+        ? 'El endpoint de calidad de contactos no está disponible en el servidor de datos (404). Avisá a Ariel.'
         : (data && data.error ? data.error : 'Error ' + r.status);
       document.getElementById('errorBox').textContent = msg;
       show('errorBox');
@@ -316,6 +467,7 @@ function descargarPDF() {
     .catch(err => { alert('No se pudo generar el PDF: ' + err.message); btn.disabled = false; btn.textContent = '⬇ Descargar PDF'; });
 }
 
+// Init
 onScopeChange();
 </script>
 </body>
