@@ -26,6 +26,9 @@ const COMUNICACIONES_HUB_URL = process.env.COMUNICACIONES_HUB_URL || 'https://n8
 const DALEGAS_API_URL = process.env.DALEGAS_API_URL || 'https://api.dalegas.com.ar';
 const DALEGAS_API_KEY = process.env.DALEGAS_API_KEY || 'AppNovaSecret2026';
 const INFORME_OBLEAS_API_KEY = process.env.INFORME_OBLEAS_API_KEY || 'SistemaObleas2026';
+// API key para el endpoint de calidad de contactos (OB-3, proxy → api.dalegas.com.ar/api/calidad_contactos).
+// La provee Enargas Scrap (registrada en gnc_api_keys). Overridear en .env de S18 cuando esté la definitiva.
+const CALIDAD_API_KEY = process.env.CALIDAD_API_KEY || DALEGAS_API_KEY;
 // API key del endpoint de export a ManyChat (lo consume GP-37/n8n sin sesión). Ver /api/export/manychat.
 const MANYCHAT_EXPORT_API_KEY = process.env.MANYCHAT_EXPORT_API_KEY || 'NovaObleasManychat2026';
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
@@ -608,6 +611,37 @@ app.get('/api/informe-obleas/serie', async (req, res) => {
       signal: AbortSignal.timeout(30000)
     });
     const data = await resp.json();
+    res.status(resp.status).json(data);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ============================================================
+// CALIDAD DE CONTACTOS (OB-3, proxy → api.dalegas.com.ar/api/calidad_contactos)
+// Fuente única del cálculo: Enargas Scrap. Acá solo se proxya con la API key
+// del servidor (nunca se expone al browser) y se pasa scope/id/anio tal cual.
+// ============================================================
+
+app.get('/api/calidad-contactos', async (req, res) => {
+  try {
+    const scope = req.query.scope || '';
+    const id = req.query.id || '';
+    const anio = req.query.anio || '';
+    if (scope !== 'taller' && scope !== 'comisionista') {
+      return res.status(400).json({ error: "scope inválido (esperado: 'taller' o 'comisionista')" });
+    }
+    if (!id) return res.status(400).json({ error: 'Falta el parámetro id' });
+    const qs = new URLSearchParams({ scope, id });
+    if (anio) qs.set('anio', anio);
+    const url = `${DALEGAS_API_URL}/api/calidad_contactos?${qs.toString()}`;
+    const resp = await fetch(url, {
+      headers: { 'X-API-Key': CALIDAD_API_KEY },
+      signal: AbortSignal.timeout(30000)
+    });
+    // El upstream puede devolver 404 si el endpoint aún no está deployado; se propaga tal cual.
+    const text = await resp.text();
+    let data; try { data = JSON.parse(text); } catch { data = { error: 'Respuesta no-JSON del upstream', raw: text.slice(0, 300) }; }
     res.status(resp.status).json(data);
   } catch (e) {
     res.status(500).json({ error: e.message });

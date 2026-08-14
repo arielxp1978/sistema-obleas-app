@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Calidad de Contactos — Nova GNC</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%231a73e8'%3E%3Cpath d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm4 18H6V4h7v5h5v11zM8 15h8v1H8zm0-3h8v1H8zm0-3h5v1H8z'/%3E%3C/svg%3E">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+<style>
+:root {
+  --primary: #1a73e8; --primary-dark: #1557b0; --success: #34a853;
+  --warning: #f9ab00; --danger: #ea4335; --bg: #f8f9fa;
+  --card: #fff; --text: #202124; --text-sec: #5f6368;
+  --border: #dadce0; --radius: 8px;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); }
+header { background: linear-gradient(135deg, #1a73e8, #4285f4); color:#fff; padding:16px 24px; display:flex; justify-content:space-between; align-items:center; box-shadow:0 2px 8px rgba(0,0,0,.15); }
+header h1 { font-size:1.3em; font-weight:600; }
+header .links { display:flex; gap:12px; align-items:center; }
+header .links a, header .links button { color:#fff; background:rgba(255,255,255,.15); border:1px solid rgba(255,255,255,.3); padding:6px 14px; border-radius:20px; cursor:pointer; font-size:.85em; text-decoration:none; transition:.2s; }
+header .links a:hover, header .links button:hover { background:rgba(255,255,255,.3); }
+.container { max-width:1000px; margin:0 auto; padding:20px; }
+.card { background:var(--card); border-radius:var(--radius); border:1px solid var(--border); padding:20px; margin-bottom:16px; box-shadow:0 1px 3px rgba(0,0,0,.05); }
+.card h3 { font-size:1.05em; color:var(--text); margin-bottom:14px; padding-bottom:8px; border-bottom:1px solid #eee; }
+.btn { padding:8px 18px; border:none; border-radius:6px; cursor:pointer; font-size:.9em; font-weight:500; transition:.2s; display:inline-flex; align-items:center; gap:6px; }
+.btn-primary { background:var(--primary); color:#fff; }
+.btn-primary:hover { background:var(--primary-dark); }
+.btn-success { background:var(--success); color:#fff; }
+.btn-success:hover { background:#2c9247; }
+.btn:disabled { opacity:.5; cursor:not-allowed; }
+.form-row { display:flex; gap:14px; flex-wrap:wrap; align-items:flex-end; }
+.form-group { display:flex; flex-direction:column; gap:4px; }
+.form-group label { font-size:.82em; font-weight:500; color:var(--text-sec); }
+.form-group .hint { font-size:.72em; color:var(--text-sec); }
+input, select { padding:8px 12px; border:1px solid var(--border); border-radius:6px; font-size:.9em; font-family:inherit; }
+input:focus, select:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 2px rgba(26,115,232,.15); }
+input#idInput { min-width:240px; }
+.hidden { display:none !important; }
+.alert { padding:12px 16px; border-radius:var(--radius); font-size:.9em; margin-bottom:16px; }
+.alert-warning { background:#fef7e0; color:#7a4200; border:1px solid #fdd663; }
+.alert-danger { background:#fce8e6; color:#8b1a10; border:1px solid #f5b5ae; }
+.alert-info { background:#e8f0fe; color:#174ea6; border:1px solid #aecbfa; }
+.spinner { display:inline-block; width:26px; height:26px; border:3px solid rgba(26,115,232,.2); border-top-color:var(--primary); border-radius:50%; animation:spin .6s linear infinite; vertical-align:middle; }
+@keyframes spin { to { transform:rotate(360deg); } }
+.doc-actions { display:flex; gap:12px; justify-content:flex-end; margin-bottom:12px; }
+
+/* ===== Documento oficial (scopeado bajo #docRender para no chocar con el chrome del app) ===== */
+#docRender { background:#e9e9ea; padding:26px 16px; border-radius:var(--radius); }
+#docRender .doc { max-width:760px; margin:0 auto; background:#fff; padding:56px 60px 44px; box-shadow:0 1px 4px rgba(0,0,0,.12); font-family:Arial,Helvetica,sans-serif; color:#1a1a1a; line-height:1.55; }
+#docRender .doc, #docRender .doc * { box-sizing:border-box; }
+#docRender .top{ display:flex; justify-content:space-between; align-items:flex-end; border-bottom:2px solid #1a1a1a; padding-bottom:14px; }
+#docRender .top .org{ font-size:12px; letter-spacing:3px; text-transform:uppercase; color:#555; font-weight:bold; }
+#docRender .top .ref{ font-size:11px; color:#777; text-align:right; line-height:1.5; }
+#docRender h1{ font-size:21px; font-weight:bold; margin:26px 0 2px; }
+#docRender .subtitle{ font-size:13px; color:#666; margin-bottom:26px; }
+#docRender .field{ font-size:13px; margin:2px 0; }
+#docRender .field b{ display:inline-block; min-width:150px; color:#555; }
+#docRender .intro{ font-size:13px; color:#333; margin:22px 0 26px; padding-top:22px; border-top:1px solid #ddd; }
+#docRender h2{ font-size:12px; letter-spacing:1.5px; text-transform:uppercase; font-weight:bold; margin:30px 0 12px; }
+#docRender table{ width:100%; border-collapse:collapse; font-size:13px; }
+#docRender .summary td{ padding:10px 4px; border-bottom:1px solid #e2e2e2; }
+#docRender .summary td.n{ text-align:right; white-space:nowrap; width:90px; }
+#docRender .summary td.p{ text-align:right; color:#777; width:64px; }
+#docRender .summary .tot td{ font-weight:bold; border-top:2px solid #1a1a1a; border-bottom:none; padding-top:12px; }
+#docRender .empty{ font-size:13px; color:#333; background:#f4f4f5; padding:12px 16px; }
+#docRender .ex td{ padding:8px 10px; border-bottom:1px solid #e6e6e6; }
+#docRender .ex td.tel{ font-weight:bold; white-space:nowrap; width:150px; }
+#docRender .ex td.d{ color:#555; }
+#docRender .ex td.n{ text-align:right; color:#777; width:90px; }
+#docRender .ex tr:first-child td{ border-top:1.5px solid #1a1a1a; }
+#docRender .note{ font-size:12px; color:#666; margin-top:12px; }
+#docRender .foot{ margin-top:44px; padding-top:14px; border-top:1px solid #ddd; font-size:11px; color:#999; display:flex; justify-content:space-between; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🧹 Calidad de Contactos</h1>
+  <div class="links">
+    <a href="/">← Volver</a>
+    <button onclick="cerrarSesion()">Salir</button>
+  </div>
+</header>
+
+<div class="container">
+
+  <!-- Formulario -->
+  <div class="card">
+    <h3>Generar informe</h3>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Tipo</label>
+        <select id="scopeInput" onchange="onScopeChange()">
+          <option value="taller">Por taller</option>
+          <option value="comisionista">Por comisionista</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label id="idLabel">Código(s) de taller</label>
+        <input type="text" id="idInput" placeholder="QUT0867,HIT0714">
+        <span class="hint" id="idHint">Uno o varios códigos separados por coma.</span>
+      </div>
+      <div class="form-group">
+        <label>Año</label>
+        <input type="number" id="anioInput" min="2020" max="2100" step="1" style="width:110px;">
+      </div>
+      <button class="btn btn-primary" id="btnGenerar" onclick="generar()">Generar</button>
+    </div>
+    <div id="comiNota" class="alert alert-info hidden" style="margin:14px 0 0;">
+      <strong>Reporte por comisionista:</strong> el documento no imprime el código del comisionista (solo el taller como figura en ENARGAS).
+      El código queda únicamente en el nombre del archivo PDF, para el archivo interno. El envío al comisionista se hace manualmente con el PDF descargado.
+    </div>
+  </div>
+
+  <!-- Estados -->
+  <div id="cargando" class="card hidden" style="text-align:center; padding:36px;">
+    <span class="spinner"></span>
+    <p style="color:var(--text-sec); margin-top:10px;">Consultando…</p>
+  </div>
+
+  <div id="errorBox" class="alert alert-danger hidden"></div>
+
+  <div id="placeholder" class="card" style="text-align:center; padding:44px 24px;">
+    <p style="color:var(--text-sec);">Elegí tipo, código y año, y hacé clic en <strong>Generar</strong>.</p>
+  </div>
+
+  <!-- Resultado -->
+  <div id="resultado" class="hidden">
+    <div class="doc-actions">
+      <button class="btn btn-success" id="btnPdf" onclick="descargarPDF()">⬇ Descargar PDF</button>
+    </div>
+    <div id="docRender"></div>
+  </div>
+
+</div>
+
+<script>
+function getToken() {
+  const m = document.cookie.match(/token=([a-f0-9]{64})/);
+  return m ? m[1] : null;
+}
+async function authFetch(url, opts = {}) {
+  if (!opts.headers) opts.headers = {};
+  const t = getToken();
+  if (t) opts.headers['Authorization'] = 'Bearer ' + t;
+  const r = await fetch(url, opts);
+  if (r.status === 401) { window.location.href = '/login'; return null; }
+  return r;
+}
+async function cerrarSesion() {
+  await authFetch('/api/logout', { method: 'POST' });
+  window.location.href = '/login';
+}
+
+let ULTIMO = null; // { data, filename }
+
+// Año por defecto = actual
+document.getElementById('anioInput').value = new Date().getFullYear();
+
+function onScopeChange() {
+  const scope = document.getElementById('scopeInput').value;
+  const esComi = scope === 'comisionista';
+  document.getElementById('idLabel').textContent = esComi ? 'Código del comisionista (GNCOBS3)' : 'Código(s) de taller';
+  document.getElementById('idInput').placeholder = esComi ? '550@555' : 'QUT0867,HIT0714';
+  document.getElementById('idHint').textContent = esComi
+    ? 'Código del comisionista tal cual lo usa el sistema (ej. 550@555).'
+    : 'Uno o varios códigos separados por coma.';
+  document.getElementById('comiNota').classList.toggle('hidden', !esComi);
+}
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => (
+    { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]
+  ));
+}
+function fmtNum(n) { return (n == null) ? '—' : Number(n).toLocaleString('es-AR'); }
+function pct(part, total) {
+  if (!total) return '0%';
+  return Math.round((Number(part) / Number(total)) * 100) + '%';
+}
+function fechaLarga(d) {
+  const meses = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  return `${d.getDate()} de ${meses[d.getMonth()]} de ${d.getFullYear()}`;
+}
+function sanitizeId(id) {
+  return String(id).replace(/[^A-Za-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+// Nombre de archivo. Comisionista: usa ref_interna (nunca va en el cuerpo). Taller: usa los códigos.
+function buildFilename(scope, id, anio, data) {
+  if (scope === 'comisionista') {
+    const ref = data && data.ref_interna ? data.ref_interna : ('com-' + sanitizeId(id));
+    return `informe-contactos-${anio}-${sanitizeId(ref)}.pdf`;
+  }
+  return `informe-contactos-${anio}-taller-${sanitizeId(id)}.pdf`;
+}
+
+// Correlativo neutro para el cuerpo (NO revela comisionista). Basado en fecha de emisión.
+function correlativo(now) {
+  const p = n => String(n).padStart(2, '0');
+  return `${now.getFullYear()}${p(now.getMonth()+1)}${p(now.getDate())}-${p(now.getHours())}${p(now.getMinutes())}`;
+}
+
+function renderDoc(data) {
+  const now = new Date();
+  const total = Number(data.total || 0);
+  const validos = Number(data.validos || 0);
+  const sin = Number(data.sin_utilizable || 0);
+  const aVerificar = Array.isArray(data.a_verificar) ? data.a_verificar : [];
+  const ejemplos = Array.isArray(data.ejemplos_no_utilizables) ? data.ejemplos_no_utilizables : [];
+
+  const verificarHTML = aVerificar.length === 0
+    ? `<div class="empty">No se registran teléfonos repetidos en más de 10 clientes durante el período.</div>`
+    : `<table class="ex"><tbody>${aVerificar.map(v => `
+        <tr>
+          <td class="tel">${esc(v.tel_fmt || v.tel || '')}</td>
+          <td class="d">Registrado en ${fmtNum(v.clientes)} clientes${v.titulares != null ? ` · ${fmtNum(v.titulares)} titulares` : ''}</td>
+          <td class="n">${fmtNum(v.clientes)}</td>
+        </tr>`).join('')}</tbody></table>`;
+
+  const ejemplosHTML = ejemplos.length === 0
+    ? `<div class="empty">No se detectaron patrones de contactos no utilizables.</div>`
+    : `<table class="ex"><tbody>${ejemplos.map(e => `
+        <tr>
+          <td class="tel">${esc(e.valor || '')}</td>
+          <td class="d">${esc(e.motivo || '')}</td>
+          <td class="n">${fmtNum(e.casos)}</td>
+        </tr>`).join('')}</tbody></table>`;
+
+  return `
+  <div class="doc">
+    <div class="top">
+      <div class="org">Departamento de Calidad de Datos</div>
+      <div class="ref">Informe N.º ${esc(correlativo(now))}<br>Emitido: ${esc(fechaLarga(now))}</div>
+    </div>
+    <h1>Informe de Calidad de Base de Contactos</h1>
+    <div class="subtitle">Evaluación de los datos de contacto registrados por el taller</div>
+    <div class="field"><b>Taller:</b> ${esc(data.taller_nombre || '—')}</div>
+    <div class="field"><b>Período analizado:</b> ${esc(data.periodo || ('Año ' + (data.anio || '')))}</div>
+    <div class="field"><b>Clientes evaluados:</b> ${fmtNum(total)}</div>
+    <p class="intro">Se evaluó el teléfono de contacto de cada cliente registrado por el taller durante el período. A continuación se resume el estado de la base.</p>
+
+    <h2>Resumen de la base</h2>
+    <table class="summary"><tbody>
+      <tr><td>Contactos válidos</td><td class="n">${fmtNum(validos)}</td><td class="p">${pct(validos, total)}</td></tr>
+      <tr><td>Contactos sin teléfono utilizable</td><td class="n">${fmtNum(sin)}</td><td class="p">${pct(sin, total)}</td></tr>
+      <tr class="tot"><td>Total de clientes evaluados</td><td class="n">${fmtNum(total)}</td><td class="p">100%</td></tr>
+    </tbody></table>
+
+    <h2>Números a verificar</h2>
+    <p class="note">Teléfonos registrados en más de 10 clientes distintos. Se recomienda revisar.</p>
+    ${verificarHTML}
+
+    <h2>Ejemplos de contactos no utilizables</h2>
+    <p class="note">Valores que se cargan para completar el campo pero no permiten contactar al cliente. Se recomienda no utilizarlos: son fácilmente detectables.</p>
+    ${ejemplosHTML}
+
+    <div class="foot"><span>Departamento de Calidad de Datos</span><span>Página 1 de 1</span></div>
+  </div>`;
+}
+
+function show(id) {
+  ['cargando','placeholder','errorBox','resultado'].forEach(x =>
+    document.getElementById(x).classList.toggle('hidden', x !== id));
+}
+
+async function generar() {
+  const scope = document.getElementById('scopeInput').value;
+  const id = document.getElementById('idInput').value.trim();
+  const anio = document.getElementById('anioInput').value.trim();
+  if (!id) { alert('Ingresá un código.'); return; }
+
+  document.getElementById('btnGenerar').disabled = true;
+  show('cargando');
+  try {
+    const qs = new URLSearchParams({ scope, id });
+    if (anio) qs.set('anio', anio);
+    const r = await authFetch('/api/calidad-contactos?' + qs.toString());
+    if (!r) return;
+    const data = await r.json();
+    if (!r.ok) {
+      const msg = r.status === 404
+        ? 'El endpoint de calidad de contactos todavía no está disponible en el servidor de datos (404). Avisá a Ariel para confirmar el deploy del lado Enargas Scrap.'
+        : (data && data.error ? data.error : 'Error ' + r.status);
+      document.getElementById('errorBox').textContent = msg;
+      show('errorBox');
+      return;
+    }
+    const filename = buildFilename(scope, id, anio || (data.anio || ''), data);
+    ULTIMO = { data, filename };
+    document.getElementById('docRender').innerHTML = renderDoc(data);
+    show('resultado');
+  } catch (e) {
+    document.getElementById('errorBox').textContent = 'Error de red: ' + e.message;
+    show('errorBox');
+  } finally {
+    document.getElementById('btnGenerar').disabled = false;
+  }
+}
+
+function descargarPDF() {
+  if (!ULTIMO) return;
+  const el = document.querySelector('#docRender .doc');
+  if (!el) return;
+  const btn = document.getElementById('btnPdf');
+  btn.disabled = true; btn.textContent = 'Generando PDF…';
+  const opt = {
+    margin: 0,
+    filename: ULTIMO.filename,
+    image: { type: 'jpeg', quality: 0.98 },
+    html2canvas: { scale: 3, backgroundColor: '#ffffff', useCORS: true },
+    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+  };
+  html2pdf().set(opt).from(el).save()
+    .then(() => { btn.disabled = false; btn.textContent = '⬇ Descargar PDF'; })
+    .catch(err => { alert('No se pudo generar el PDF: ' + err.message); btn.disabled = false; btn.textContent = '⬇ Descargar PDF'; });
+}
+
+onScopeChange();
+</script>
+</body>
+</html>
