@@ -21,7 +21,6 @@ const app = express();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 const PORT = process.env.PORT || 3000;
 
-const APP_CLAVE = process.env.APP_CLAVE || 'nova2026';
 const COMUNICACIONES_HUB_URL = process.env.COMUNICACIONES_HUB_URL || 'https://n8n.srv803796.hstgr.cloud/webhook/comunicaciones';
 const DALEGAS_API_URL = process.env.DALEGAS_API_URL || 'https://api.dalegas.com.ar';
 const DALEGAS_API_KEY = process.env.DALEGAS_API_KEY || 'AppNovaSecret2026';
@@ -34,10 +33,12 @@ const MANYCHAT_EXPORT_API_KEY = process.env.MANYCHAT_EXPORT_API_KEY || 'NovaOble
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 const GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI || 'http://192.168.0.18:3080/auth/google/callback';
-// Dominios habilitados para login con Google. Sorvicor agregado 2026-08-14 (Vanessa Urquia, coord_obleas).
+// Dominios de la empresa. DEFENSA EN PROFUNDIDAD, NO autorización (OB-7 / CEO-64): sirve para
+// descartar un gmail personal antes de pegarle a la DB, pero YA NO decide quién entra — eso lo
+// gobierna panel.acceso_app (sección 'obleas' o super_admin). Sorvicor: Vanesa Urquia (coord_obleas).
 const ALLOWED_DOMAINS = ['novagnc.com.ar', 'sorvicor.com.ar'];
 
-// Pool PostgreSQL cdp_nova (solo para verificar/crear usuarios Google)
+// Pool PostgreSQL cdp_nova. Autoriza el login contra panel.acceso_app (función del panel, PN-75).
 const pool = new Pool({
   host: process.env.PGHOST,
   port: parseInt(process.env.PGPORT || '5432'),
@@ -198,10 +199,10 @@ function generarToken() {
   return crypto.randomBytes(32).toString('hex');
 }
 
-function crearSesion(nombre, email, metodo) {
+function crearSesion(nombre, email, metodo, rol) {
   limpiarSesiones();
   const token = generarToken();
-  sessions[token] = { ts: Date.now(), nombre, email, metodo };
+  sessions[token] = { ts: Date.now(), nombre, email, metodo, rol };
   return token;
 }
 
@@ -217,16 +218,8 @@ app.use(express.json({ limit: '50mb' }));
 // AUTH
 // ============================================================
 
-// Login con clave (fallback de emergencia)
-app.post('/api/login', (req, res) => {
-  const { clave } = req.body;
-  if (clave === APP_CLAVE) {
-    const token = crearSesion('Admin', '', 'clave');
-    res.json({ ok: true, token });
-  } else {
-    res.status(401).json({ ok: false, error: 'Clave incorrecta' });
-  }
-});
+// El acceso por clave compartida (APP_CLAVE) se eliminó (OB-7 / CEO-64): el único login es
+// Google + autorización del panel (panel.acceso_app). Ariel entra igual porque es super_admin.
 
 // Servir login.html sin auth
 app.get('/login', (req, res) => {
@@ -283,36 +276,37 @@ app.get('/auth/google/callback', async (req, res) => {
     const googleUser = await userRes.json();
     if (!googleUser.email) return res.redirect('/login.html?error=no_email');
 
-    // Verificar dominio
+    // Defensa en profundidad: descartar cuentas fuera de los dominios de la empresa ANTES de
+    // pegarle a la DB (un gmail personal ni llega a consultar el panel). El dominio YA NO autoriza.
     const domain = googleUser.email.split('@')[1];
     if (!ALLOWED_DOMAINS.includes(domain)) return res.redirect('/login.html?error=domain_not_allowed');
 
-    // Buscar o crear usuario en panel.usuarios (cdp_nova)
-    let nombre = googleUser.name || googleUser.email.split('@')[0];
+    // AUTORIZACIÓN GOBERNADA POR EL PANEL (OB-7 / convención CEO-64).
+    // La regla de acceso (bypass super_admin + activo + sección 'obleas') vive en la función
+    // panel.acceso_app de cdp_nova = fuente única. Obleas solo consume `permitido` — no la
+    // reimplementa. Reglas duras: NO auto-create y fail-closed (si la DB no responde, no entra nadie).
+    let acceso;
     try {
-      const existing = await pool.query(
-        'SELECT id, nombre FROM panel.usuarios WHERE email = $1 AND activo = true',
-        [googleUser.email]
+      const r = await pool.query(
+        'SELECT permitido, nombre, rol FROM panel.acceso_app($1, $2)',
+        [googleUser.email, 'obleas']
       );
-      if (existing.rows.length > 0) {
-        nombre = existing.rows[0].nombre || nombre;
-        await pool.query(
-          'UPDATE panel.usuarios SET ultimo_login = NOW(), nombre = $1 WHERE id = $2',
-          [googleUser.name || nombre, existing.rows[0].id]
-        ).catch(() => {});
-      } else {
-        // Auto-crear con rol básico
-        await pool.query(
-          "INSERT INTO panel.usuarios (nombre, email, password_hash, rol, secciones_permitidas, activo) VALUES ($1, $2, 'google_oauth', 'operador', '{dashboard}', true)",
-          [nombre, googleUser.email]
-        ).catch(() => {});
-      }
+      acceso = r.rows[0]; // undefined = el email no está en panel.usuarios
     } catch (dbErr) {
-      console.error('DB error en Google callback (no bloqueante):', dbErr.message);
-      // Continuar igual: si la DB falla, el dominio ya fue verificado
+      console.error('[OAuth callback] panel.acceso_app falló → fail-closed, rechazo:', dbErr.message);
+      return res.redirect('/login.html?error=panel_no_disponible');
     }
 
-    const token = crearSesion(nombre, googleUser.email, 'google');
+    if (!acceso || !acceso.permitido) {
+      console.log('[OAuth callback] acceso DENEGADO por el panel para:', googleUser.email);
+      return res.redirect('/login.html?error=sin_acceso');
+    }
+
+    const nombre = acceso.nombre || googleUser.name || googleUser.email.split('@')[0];
+    // Marcar último login (no bloqueante; no incide en la autorización, que ya pasó).
+    pool.query('UPDATE panel.usuarios SET ultimo_login = NOW() WHERE email = $1', [googleUser.email]).catch(() => {});
+
+    const token = crearSesion(nombre, googleUser.email, 'google', acceso.rol);
     console.log('[OAuth callback] sesión creada para:', googleUser.email, '| token:', token.slice(0,8) + '...');
     const usuarioJson = JSON.stringify({ nombre, email: googleUser.email, metodo: 'google' });
 
@@ -985,5 +979,5 @@ app.get('*', (req, res) => {
 app.listen(PORT, () => {
   console.log(`\n  Sistema de Obleas GNC - Nova GNC`);
   console.log(`  Corriendo en http://localhost:${PORT}`);
-  console.log(`  Clave de acceso: ${APP_CLAVE === 'nova2026' ? '⚠️  Usando clave default — cambiala con la variable de entorno APP_CLAVE' : '✅ Clave configurada por variable de entorno'}\n`);
+  console.log(`  Acceso: Google OAuth + autorización del panel (panel.acceso_app, sección 'obleas')\n`);
 });

@@ -6,7 +6,7 @@ Procesador de CSVs de obleas GNC exportados de ENARGAS. Clasifica vehículos seg
 
 **URL pública:** https://obleas.novagnc.com.ar  
 **GitHub:** arielxp1978/sistema-obleas-app  
-**Acceso:** Login Google `@novagnc.com.ar` o `@sorvicor.com.ar` (dominios en `ALLOWED_DOMAINS`, server.js). El login **solo valida el dominio del email** — NO consulta el panel: cualquier cuenta de esos dominios entra (si no está en `panel.usuarios`, se auto-crea como `operador`). El acceso del panel no gobierna esta app. Sorvicor habilitado 2026-08-14 para Vanessa Urquia (coord_obleas). Hay además una "clave de emergencia" compartida (`APP_CLAVE`) que saltea el dominio.
+**Acceso (OB-7 / CEO-64, 2026-08-14):** Login **Google + autorización del panel**. Tras el OAuth, el callback consulta por SQL directo `SELECT permitido, nombre, rol FROM panel.acceso_app(email,'obleas')` (función del panel en `cdp_nova`, fuente única de la regla de acceso). Entra solo si `permitido=true` (usuario `activo` con la sección `obleas`, o `super_admin` como Ariel). **Ya NO se auto-crea usuario**, **NO hay clave de emergencia** (`APP_CLAVE` eliminado) y es **fail-closed** (si la DB/panel no responde → rechazo). El **dominio** (`ALLOWED_DOMAINS = novagnc.com.ar, sorvicor.com.ar`) quedó solo como defensa en profundidad (descarta gmail personal antes de consultar) — ya NO decide quién entra. Para dar acceso a alguien: tildarle la sección `obleas` en el panel (`usuarios.html`). Casos: Vanesa Urquia (`vurquia@sorvicor.com.ar`, coord_obleas, tiene `obleas`) entra; Nahir Alarcon (sin la sección) es rechazada con mensaje claro.
 
 ---
 
@@ -446,12 +446,25 @@ Pantalla para auditar la calidad del teléfono que carga un taller (o un comisio
 5. **Sincronizar estructura local ↔ S18** — evaluar deploy script o GitHub Action (hoy es scp + rebuild manual).
 6. **`verificar.js` legacy** — talleres desactualizados (IRT0550/HIT0797). Si se reactiva ese modo, alinear con `TALLERES_PROPIOS`.
 
+### Estado al cierre 2026-08-14 (OB-7) — Login gobernado por el panel
+Paso 2/2 del stack "Login Obleas" (CEO-64). El login de obleas dejó de decidirse por dominio y ahora lo autoriza el panel. Desplegado y verificado en producción (scp + rebuild).
+- **Autorización por `panel.acceso_app`:** el callback de Google (`/auth/google/callback` en server.js) llama `SELECT permitido, nombre, rol FROM panel.acceso_app(email,'obleas')` por SQL directo (pool `cdp_nova` que ya existía). Entra solo si `permitido=true`. La regla (super_admin bypass + `activo` + sección `obleas`) vive en la función del panel = fuente única; obleas solo consume `permitido`, no la reimplementa.
+- **Eliminado el auto-create.** El `INSERT INTO panel.usuarios ... 'operador'` se borró. La app no crea usuarios nunca más. Email fuera del padrón → rechazo, sin usuario nuevo.
+- **Eliminado `APP_CLAVE`** (clave de emergencia) — se sacó el endpoint `/api/login`, la constante y la sección de clave de `login.html`. Único acceso = Google + panel. Ariel entra igual (super_admin).
+- **Fail-closed:** si `panel.acceso_app`/DB no responde → rechazo (`?error=panel_no_disponible`). Se terminó el "si la DB falla, entra igual con el dominio".
+- **Dominio = defensa en profundidad, no autorización.** `ALLOWED_DOMAINS` filtra gmail personal antes de consultar, pero ya no decide.
+- **Mensajes de error nuevos en `login.html`:** `sin_acceso` ("tu usuario no tiene acceso a Obleas, pediselo a Ariel"), `panel_no_disponible`.
+- **Verificado:** función probada con Vanesa (`obleas` → permitido), Nahir (sin sección → rechazada), Ariel (super_admin → permitido por bypass). En prod: `/login` 200, `/api/login` con clave vieja → 401 (ya no crea sesión), código `panel.acceso_app` confirmado dentro del container.
+- **Cómo dar acceso de ahora en más:** tildar la sección `obleas` a la persona en el panel (`usuarios.html`). No se toca la app.
+- **Loop CEO-64:** obleas es el **primer consumidor** del contrato. Falta replicar a turnos/epec/Nova Pits (sin encargo aún; se abren cuando se retome cada app). Avisar al CEO para cerrar CEO-64.
+- **`.env` de S18:** `APP_CLAVE` sigue en el `.env` (quedó muerta, no se borró — regla de protección de `.env`). Se puede comentar cuando Ariel quiera.
+
 ### Estado al cierre 2026-08-14
 Sesión OB-3 (reportes de calidad de contactos) + login multi-dominio. Todo desplegado y verificado en producción (scp + rebuild):
 - **OB-3 ejecutado y cerrado** (`encargos/hechos/…-OB-3-…-DONE.md`). Pantalla `calidad-contactos.html` + proxy `/api/calidad-contactos` (consume `api.dalegas.com.ar/api/calidad_contactos`, fuente única Enargas Scrap) + documento oficial + PDF (html2pdf) con filename que incluye `ref_interna`. Regla de discreción verificada (el cuerpo del reporte por comisionista solo muestra el taller, nunca el código). Ver sección "Calidad de Contactos (OB-3)".
 - **Buscador** de taller/comisionista por código o nombre (endpoint `/api/calidad-contactos/opciones` desde `nova_operaciones`, solo lectura). Taller = multi-select con chips (soporta entidades multi-código, ej. Car Equip QUT0867+HIT0714); comisionista = single.
 - **Login multi-dominio:** `ALLOWED_DOMAIN` (string) → `ALLOWED_DOMAINS` (lista) = `['novagnc.com.ar','sorvicor.com.ar']`. Habilitado para Vanessa Urquia (`vurquia@sorvicor.com.ar`, coord_obleas). `hd=*` en el consent.
-- **OJO — el login sigue siendo solo por dominio + auto-create** (no gobierna el panel). Ariel quiere que el panel gobierne el acceso de todas las apps → **encargo CEO-64** dejado (`agente-ceo/encargos/pendientes/`). Cuando el CEO defina la convención, obleas recibe un encargo para reemplazar el gate por-dominio por el chequeo contra el panel + dejar de auto-crear.
+- **Login por dominio + auto-create → RESUELTO en OB-7** (ver "Estado al cierre 2026-08-14 (OB-7)" abajo). Al cierre de esta sesión (OB-3) todavía era por dominio; el encargo CEO-64 definió la convención y OB-7 la implementó.
 - **Idea OB-6** (`encargos/ideas/`): definir canal para enviar el PDF de calidad al comisionista (hoy se baja y se manda a mano; no hay canal automático).
 - **Deuda pre-existente (Ariel la iba a definir):** `sistema-obleas/encargos/` está gitignored en el repo padre y no pertenece al subrepo `app/` → los encargos de este proyecto quedan fuera de git (sin trazabilidad versionada). Decisión pendiente de Ariel.
 

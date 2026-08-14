@@ -45,19 +45,6 @@ body { font-family:'Segoe UI',system-ui,sans-serif; background:linear-gradient(1
   </a>
 
   <p id="error-google" class="error" style="display:none"></p>
-
-  <p class="fallback-toggle" onclick="toggleFallback()">Acceso de emergencia ▾</p>
-  <div class="fallback-section" id="fallback-section">
-    <div class="divider">clave de emergencia</div>
-    <form onsubmit="login(event)">
-      <div class="form-group">
-        <label>Clave de acceso</label>
-        <input type="password" id="clave" placeholder="Ingresá la clave">
-      </div>
-      <button type="submit" class="btn">Ingresar</button>
-      <p class="error" id="error">Clave incorrecta</p>
-    </form>
-  </div>
 </div>
 <script>
 // Mostrar error de Google si viene en la URL
@@ -69,40 +56,13 @@ if (errGoogle) {
     token_failed: 'Error al conectar con Google. Intentá de nuevo.',
     no_email: 'No se pudo obtener tu email de Google.',
     domain_not_allowed: 'Tu cuenta no es @novagnc.com.ar ni @sorvicor.com.ar.',
-    server_error: 'Error interno. Usá la clave de emergencia.'
+    sin_acceso: 'Tu usuario no tiene acceso a Obleas. Pediselo a Ariel para que te lo habilite en el panel.',
+    panel_no_disponible: 'No se pudo verificar tu acceso en este momento. Volvé a intentar en unos minutos.',
+    server_error: 'Error interno. Volvé a intentar en unos minutos.'
   };
   const el = document.getElementById('error-google');
   el.textContent = msgs[errGoogle] || 'Error desconocido.';
   el.style.display = 'block';
-}
-
-function toggleFallback() {
-  const sec = document.getElementById('fallback-section');
-  sec.style.display = sec.style.display === 'block' ? 'none' : 'block';
-}
-
-async function login(e) {
-  e.preventDefault();
-  const clave = document.getElementById('clave').value;
-  try {
-    const resp = await fetch('/api/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ clave })
-    });
-    const data = await resp.json();
-    if (data.ok) {
-      document.cookie = `token=${data.token}; path=/; max-age=86400; SameSite=Strict`;
-      window.location.href = '/';
-    } else {
-      document.getElementById('error').style.display = 'block';
-      document.getElementById('clave').value = '';
-      document.getElementById('clave').focus();
-    }
-  } catch (err) {
-    document.getElementById('error').textContent = 'Error de conexión';
-    document.getElementById('error').style.display = 'block';
-  }
 }
 </script>
 </body>
