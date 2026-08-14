@@ -487,6 +487,14 @@ Pantalla para auditar la calidad del teléfono que carga un taller (o un comisio
 5. **Sincronizar estructura local ↔ S18** — evaluar deploy script o GitHub Action (hoy es scp + rebuild manual).
 6. **`verificar.js` legacy** — talleres desactualizados (IRT0550/HIT0797). Si se reactiva ese modo, alinear con `TALLERES_PROPIOS`.
 
+### Estado al cierre 2026-08-14 (ajustes tab "Descargar Archivos") — commit `d311dba`
+Cuatro ajustes pedidos por Ariel sobre el tab **Descargar Archivos** (todo desplegado por scp+rebuild y commiteado):
+1. **BUG PH corregido (importante).** `tipoGestion(r)` ahora **prioriza `_tipoGestion`** (que sí sobrevive `mapRegistro`), con `UCODGEST` de fallback. Causa raíz: `mapRegistro` (lo que queda en `STATE.registros`) **no reexpone `UCODGEST`**; al cambiar "teléfonos por archivo", `regenerarArchivos` reenviaba esos registros a `/api/generar-archivos` → `dividirArchivos` reclasificaba TODO como oblea → **los archivos PH desaparecían y no volvían** ni bajando de nuevo el número. Probado con round-trip 50→100→50: PH se mantiene. **Si tocás `mapRegistro` o `tipoGestion`, no vuelvas a depender de `UCODGEST` en el path de regeneración.**
+2. **Reorden del tab:** banner de excluidos (arriba) → card **🚀 Inyectar a ManyChat** → card **🔖 Obleas y 🧪 PH — archivos y ZIP** (abajo, respaldo manual). El banner se renderiza aparte en `#bannerExcluidos` (fuera de `#listaArchivos`) vía `renderBannerExcluidos()`.
+3. **Detalle de comisionistas excluidos** ahora en `<details>` desplegable (el título queda a la vista, el desglose largo colapsado). No usé tooltip por hover: no anda en touch.
+4. **Default "teléfonos por archivo" 50 → 100** (input, `STATE.porArchivo`, fallbacks del front y defaults del server/`dividirArchivos`).
+- **Verificación pendiente (visual, con Ariel logueado):** importar **septiembre 2026 desde InfoSys** (tiene PH: 1.471 total / 306 PH crudos; tras dedup+filtro propio ≈ 545 filtrado / 104 PH) y confirmar que al mover 50↔100 los archivos PH se mantienen. El OAuth no lo puedo hacer headless.
+
 ### Estado al cierre 2026-08-14 (OB-5) — Inyección a ManyChat desde la app
 Paso 2/2 del stack "Inyeccion Obleas". Yhonny inyecta a ManyChat desde el tab **Descargar Archivos** (tanda + preview + trigger + progreso). Ver sección **"Inyectar a ManyChat — botón de Yhonny (OB-5)"**. Todo desplegado (scp + rebuild) y commiteado (`07be6c5`, pusheado).
 - **End-to-end verificado el mismo día:** GP-37 desplegó su contenedor (`inyeccion-obleas-manychat`, S18:3120, healthy) y es alcanzable desde el container de obleas. Dry-run del período `4-2026` vía el servicio → 469 válidos, reparto V1–V5. El stack quedó **operativo**.
