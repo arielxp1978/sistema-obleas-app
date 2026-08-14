@@ -424,6 +424,17 @@ Header: X-API-Key: <MANYCHAT_EXPORT_API_KEY>
 ### Contrato para GP-37
 GP-37 llama al endpoint con la key, mapea `tipo_vencimiento` → tags de ManyChat (`Nova Obleas` / `Nova PH`), `periodo` → tag de mes, `taller` → `Taller Sorvi`/`Taller GP5`. sistema-obleas **no** decide tags — solo entrega el dato.
 
+## Calidad de Contactos (OB-3 — 2026-08-14)
+
+Pantalla para auditar la calidad del teléfono que carga un taller (o un comisionista bajo un taller nuestro), y bajar un informe PDF para pedirle que corrija. Encargo `encargos/hechos/…-OB-3-…-DONE.md`.
+
+- **UI:** `public/calidad-contactos.html` (link en la navbar de index.html). Scope taller/comisionista + código + año → Generar → render del documento oficial → Descargar PDF.
+- **Proxy:** `GET /api/calidad-contactos?scope=taller|comisionista&id=&anio=` en server.js → reenvía a `api.dalegas.com.ar/api/calidad_contactos` (**fuente única del cálculo = Enargas Scrap**; NO recalcular acá). API key en el server (`CALIDAD_API_KEY`, fallback a `DALEGAS_API_KEY`), nunca en el browser.
+- **PDF:** html2pdf.js (cdnjs). Filename incluye `ref_interna`: comisionista → `informe-contactos-{anio}-{ref_interna}.pdf`, taller → `…-taller-{codigos}.pdf`.
+- **Regla de discreción (CRÍTICA):** en el reporte por comisionista el **cuerpo solo muestra `taller_nombre`**; el código del comisionista (`ref_interna`) va SOLO en el nombre del archivo, nunca impreso. ENARGAS no distingue que esas operaciones son de un taller tercero bajo el nuestro; el documento no puede delatarlo. El correlativo `Informe N.º` es neutro (fecha), no revela nada.
+- **Envío al comisionista:** NO automatizado (no hay canal para mandar un PDF a un comisionista externo). Se baja el PDF y se manda a mano. Idea `OB-6` para definir canal.
+- El CSS del documento oficial está scopeado bajo `#docRender .doc` para no chocar con el chrome del app.
+
 ## Pendientes conocidos
 
 1. **Import directo desde InfoSys** — ✅ **funcionando (2026-07-29).** El feed ya trae vendedor (`GNCOBS1`), comisionista (`GNCOBS3`) y nombre (`subtaller_nombre`), así que el import filtra y muestra igual que el CSV. ES-16 sustancialmente cumplido. Verificar con Ariel si se puede cerrar ES-16 del lado de Enargas Scrap y dejar de subir CSV a mano.
