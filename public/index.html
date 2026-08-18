@@ -790,7 +790,7 @@ const DATALABELS_OPTS = {
 };
 
 // Nombre del taller al lado del código en los gráficos.
-const TALLER_NOMBRES = { 'IRT0550': 'Nova Gral Paz', 'HIT0797': 'Nova R20', 'QUT0867': 'Grupo P5' };
+const TALLER_NOMBRES = { 'IRT0550': 'Nova Gral Paz', 'HIT0797': 'Nova R20', 'QUT0856': 'Grupo P5' };
 function tallerLabel(code) { return TALLER_NOMBRES[code] ? `${code} · ${TALLER_NOMBRES[code]}` : code; }
 function labelsTaller(obj) { return Object.keys(obj).map(tallerLabel); }
 
@@ -1859,7 +1859,7 @@ function actualizarArchivoActivo() {
 function toggleFiltroDetalle() {
   const div = document.getElementById('filtroDetalle');
   if (div.classList.contains('hidden')) {
-    const talleres = STATE.config.talleresPropios || ['IRT0550','HIT0797','QUT0865'];
+    const talleres = STATE.config.talleresPropios || ['IRT0550','HIT0797','QUT0856'];
     const lineas = talleres.map((cod, i) => {
       if (i === 0)
         return '<li><strong>' + cod + '</strong> (col. <em>TCODTAL</em>): solo cuando <strong>Comisionista (GNCOBS3) está vacía</strong> — sin comisionista asignado.</li>';

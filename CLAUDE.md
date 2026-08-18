@@ -306,7 +306,7 @@ Se lee latin-1 (si al decodificar utf8 aparece el carácter de reemplazo `�`, 
 ### Filtro: quedarse solo con lo NUESTRO (`procesar.js`)
 Una oblea es nuestra si es **taller nuestro Y comisionista nuestro** (las dos, con AND). CLAVE: un taller propio (ej. IRT0550) también hace obleas de comisionistas EXTERNOS, por eso el taller solo no alcanza.
 
-- **Talleres propios** (`TALLERES_PROPIOS`): `IRT0550` (Nova Gral Paz), `HIT0797` (Nova R20), `QUT0867` (Grupo P5). Confirmado con Ariel sobre exports reales. `QUT0856/0865` eran del Full.rar mal armado.
+- **Talleres propios** (`TALLERES_PROPIOS`): `IRT0550` (Nova Gral Paz), `HIT0797` (Nova R20), `QUT0856` (Grupo P5). **CORREGIDO 2026-08-18 (OB-8)** — antes decía `QUT0867` = Grupo P5 y estaba al revés. Verificado contra la razón social que ENARGAS trae en `nova_operaciones.datos_raw->>'TRAZSOC'` (DB `enargas_data`): `QUT0856` = **GRUPO P5 S.R.L.** (propio, opera desde 12/2025), `QUT0867` = **CAR EQUIP S.A.S.** (ajeno, misma empresa que `HIT0714`), `QUT0865` = sin razón social, 714 ops en Cruz del Eje 2023-09/2024-11 (ajeno). La nota vieja del "Full.rar mal armado" tenía razón sobre `QUT0865` pero no sobre `QUT0856`: cuando se escribió, Grupo P5 todavía no operaba, por eso no aparecía en los exports. **Corroboración independiente:** los comisionistas propios de Grupo P5 son `856@2/4/11` — el comisionista se prefija con el número del taller, y no existe ningún `867@*`.
 - **Comisionistas propios** (`COMISIONISTAS_PROPIOS`, lista fija): `550@5/6/15` (PROMOTP), `797@2/3/4/5` (Nova R20 interno), `856@2/4/11` (Agencia/Mostrador/PROMO TP). **+ SUBTAL/GNCOBS3 vacío = trabajo directo = nuestro.**
 - **Regla de dígitos NO sirve** (Bronte `550@43` es externo con 2 díg.) → por eso lista explícita.
 - `getComisionista(r)` = `GNCOBS3 || SUBTAL` → funciona con ambos formatos.
@@ -332,7 +332,7 @@ Una oblea es nuestra si es **taller nuestro Y comisionista nuestro** (las dos, c
 - Sugerencia de teléfono (Opción A): solo se sugiere si es OK; LEVE/RECHAZAR → vacía (no inventar códigos de área).
 
 ### Import directo desde InfoSys — todavía NO alcanza (2026-07-17)
-El feed `nova_operaciones` NO trae `GNCOBS1` (vendedor, 0 filas) y el comisionista (`SUBTAL`) viene incompleto (IRT0550 52%, QUT0867 ~0%). **Encargo ES-16** a Enargas Scrap: que el feed replique el reporte "Vencimientos Usuarios" 1:1. Cuando esté, el import directo funciona sin tocar la app (ya lee esos campos).
+El feed `nova_operaciones` NO trae `GNCOBS1` (vendedor, 0 filas) y el comisionista (`SUBTAL`) viene incompleto (IRT0550 52%, QUT0867 ~0% — ojo, `QUT0867` se creía taller propio en esa fecha y es de Car Equip; ver OB-8). **Encargo ES-16** a Enargas Scrap: que el feed replique el reporte "Vencimientos Usuarios" 1:1. Cuando esté, el import directo funciona sin tocar la app (ya lee esos campos).
 
 ---
 
@@ -371,7 +371,7 @@ Alternativa al upload de CSV: traer los registros directo de `nova_operaciones` 
 - **OJO (2026-07-29):** `nova_operaciones` NO es solo de Nova — es un dump amplio de ENARGAS con **~100+ talleres** (competencia incluida). Por eso el import SIEMPRE acota a los talleres Nova en el SQL (`taller_codigo = ANY(NOVA_TALLERES)`).
 - Cada fila trae `datos_raw` (jsonb) con los mismos campos U* de la vieja megatabla CSV (UDOMINIO, UOBLEANEW, UTELEFONO, UAPEYNOM, TCODTAL, UFECVENHAB, etc.).
 - Dos fuentes con **dos formatos de fecha** en `UFECVENHAB`: `infosys_sql` (ISO `YYYY-MM-DD`) y `csv` (`DD/MM/YYYY`). El SQL normaliza ambos (`SQL_VENC_EXPR` en server.js).
-- Talleres Nova: `NOVA_TALLERES = [...TALLERES_PROPIOS]` (**fuente única** importada de `procesar.js` = `IRT0550, HIT0797, QUT0867`). **CORREGIDO 2026-07-29:** antes estaba hardcodeada `['HIT0797','IRT0550','QUT0856','QUT0865']` — MAL (QUT0856/0865 son talleres ajenos; faltaba QUT0867/Grupo P5).
+- Talleres Nova: `NOVA_TALLERES = [...TALLERES_PROPIOS]` (**fuente única** importada de `procesar.js` = `IRT0550, HIT0797, QUT0856`). Historial de esta lista: el 2026-07-29 se la sacó de estar hardcodeada acá y se la pasó a `procesar.js` (bien), pero con el contenido equivocado (`QUT0867` en vez de `QUT0856`); el **2026-08-18 (OB-8)** se corrigió el contenido contra la razón social de ENARGAS. Ver el detalle en la sección "Filtro: quedarse solo con lo NUESTRO".
 - **El feed ya trae la capa comercial (2026-07-29):** `GNCOBS1` (vendedor), `GNCOBS3` (código de comisionista) y `subtaller_nombre` (nombre del comisionista: MANSILLA, MOSTRADOR, etc.) vienen poblados en los meses recientes. El viejo comentario "GNCOBS3 siempre vacío / GNCOBS1 0 filas" quedó obsoleto — el encargo **ES-16 está sustancialmente cumplido**.
 
 ### Endpoints (server.js)
@@ -485,7 +485,38 @@ Pantalla para auditar la calidad del teléfono que carga un taller (o un comisio
 3. **Guía de uso para Yhonny** — documento operativo paso a paso del flujo nuevo (subir Vencimientos Usuarios → revisar teléfonos → descargar obleas/PH → ManyChat).
 4. **Importación automática a ManyChat** — ✅ **resuelto en OB-5** (botón "🚀 Inyectar a ManyChat" en el tab Descargar Archivos, ver sección OB-5). El ZIP queda como respaldo.
 5. **Sincronizar estructura local ↔ S18** — evaluar deploy script o GitHub Action (hoy es scp + rebuild manual).
-6. **`verificar.js` legacy** — talleres desactualizados (IRT0550/HIT0797). Si se reactiva ese modo, alinear con `TALLERES_PROPIOS`.
+6. **`verificar.js` legacy** — no hardcodea talleres: usa `config.talleresPropios` (default del endpoint `/api/config` en server.js, hoy `IRT0550, HIT0797, QUT0856`). Si hay un `data/config.json` guardado en S18 con la lista vieja, **ese archivo pisa el default** — revisarlo tras un cambio de talleres.
+
+### Estado al cierre 2026-08-18 (OB-8) — Corregido el taller propio mal listado
+
+**Qué estaba mal:** `TALLERES_PROPIOS` listaba `QUT0867` como Grupo P5. Es al revés: `QUT0867` es **CAR EQUIP S.A.S.** (un tercero) y Grupo P5 es **`QUT0856`**. Consecuencia: los listados de obleas y PH "por taller propio" metían adentro 7.221 operaciones de otra empresa y **perdían el taller de Grupo P5 completo**. Solo afecta a 2026 en adelante — `QUT0856` empezó a operar en 12/2025, y ese es justamente el motivo del error: cuando se armó la lista (2026-07), Grupo P5 no aparecía en ningún export porque todavía no existía.
+
+**Cómo se verificó** (query contra `enargas_data`, reconfirmada al ejecutar el encargo):
+
+| Código | Razón social (`datos_raw->>'TRAZSOC'`) | Ops | Rango | ¿Nuestro? |
+|---|---|---|---|---|
+| `IRT0550` | SORVICOR SRL | 63.259 | 2016-01 → hoy | ✅ Nova Gral Paz |
+| `HIT0797` | NOVA GNC SRL | 29.712 | 2019-07 → 2026-06 | ✅ Nova R20 |
+| `QUT0856` | **GRUPO P5 S.R.L.** | 3.555 | 2025-12 → hoy | ✅ Grupo P5 |
+| `QUT0867` | **CAR EQUIP S.A.S.** | 7.221 | 2020-04 → hoy | ❌ ajeno |
+| `QUT0865` | *(sin razón social)* | 714 | 2023-09 → 2024-11 | ❌ ajeno |
+| `HIT0714` | CAR EQUIP S.A.S. | 6.510 | 2017-10 → 2025-12 | ❌ ajeno (misma empresa que QUT0867) |
+
+**Corroboración independiente:** `COMISIONISTAS_PROPIOS` ya tenía `856@2/4/11` etiquetados como Grupo P5. El comisionista se prefija con el número del taller, y no existe ningún `867@*`. O sea que la app venía filtrando bien los comisionistas de P5 pero descartando sus obleas por el taller.
+
+**Archivos tocados:**
+- `lib/procesar.js` — `TALLERES_PROPIOS` = `{IRT0550, HIT0797, QUT0856}`, con el detalle de cada código en el comentario.
+- `server.js` — `TALLER_NOMBRES` (`QUT0856` → 'Grupo P5'), default de `/api/config` `talleresPropios` (agregado `QUT0856`), comentario de `NOVA_TALLERES`. `NOVA_TALLERES` en sí no se tocó: ya importaba de `procesar.js`, así que se corrigió solo.
+- `public/index.html` — `TALLER_NOMBRES` y el fallback de `toggleFiltroDetalle` (decía `QUT0865`).
+- `README.md`, este archivo — tablas de códigos y notas históricas.
+
+**⚠️ Pendiente de deploy:** el endpoint `/api/config` solo devuelve el default cuando **no existe** `data/config.json` en S18. Si Ariel guardó configuración alguna vez desde la UI, ese archivo tiene la lista vieja y **pisa el default corregido**. Al deployar hay que mirarlo:
+```bash
+ssh akeneo@100.72.42.104 "cat /home/akeneo/sistema-obleas-app/data/config.json"
+```
+Si trae `talleresPropios` con `QUT0867`/`QUT0865`, corregirlo ahí (o desde Configuración en la UI). Afecta a `verificar.js`, que lee talleres propios de la config, no de `TALLERES_PROPIOS`.
+
+**Cómo comprobar que quedó bien:** reimportar un mes de 2026 y comparar contra la corrida anterior — el total debe **bajar** por las operaciones de Car Equip que ya no entran y **subir** por las de Grupo P5 que antes se perdían. Si un mes de 2026 no cambia en nada, quedó un hardcodeo en otro lado.
 
 ### Estado al cierre 2026-08-14 (ajustes tab "Descargar Archivos") — commit `d311dba`
 Cuatro ajustes pedidos por Ariel sobre el tab **Descargar Archivos** (todo desplegado por scp+rebuild y commiteado):
@@ -528,13 +559,13 @@ Sesión OB-3 (reportes de calidad de contactos) + login multi-dominio. Todo desp
 ### Estado al cierre 2026-07-29
 Sesión de ajustes al import de InfoSys + varios fixes (todo desplegado y verificado en producción):
 - **Import InfoSys: Original ≠ Filtrado.** Sacado el `yaFiltrado:true` → ahora Original = todos los talleres Nova (todos los comisionistas), Filtrado = comisionista propio. "Revisar Teléfonos" y "Ranking" leen del set filtrado. Agosto real: Original 1285 / Filtrado 464 / excluidos 821 (coincide con el 8-2026 del CSV).
-- **`NOVA_TALLERES` corregido** a `[...TALLERES_PROPIOS]` (fuente única en procesar.js): `IRT0550, HIT0797, QUT0867`. Se sacaron QUT0856/0865 (ajenos), se agregó QUT0867 (Grupo P5).
+- **`NOVA_TALLERES` corregido** a `[...TALLERES_PROPIOS]` (fuente única en procesar.js): `IRT0550, HIT0797, QUT0867`. Se sacaron QUT0856/0865 (ajenos), se agregó QUT0867 (Grupo P5).  ⚠️ **La parte de "fuente única" quedó bien; el contenido de la lista estaba mal y se corrigió en OB-8 (2026-08-18): el propio es QUT0856, no QUT0867.**
 - **Comisionista `797@11` (PROMO TP) agregado a `COMISIONISTAS_PROPIOS`** — es de Nova, confirmado por Ariel. Ya no se excluye.
 - **Nombres de comisionista en la UI.** El gráfico "por Comisionista" (Original) y el banner de excluidos muestran el nombre (`subtaller_nombre`: MANSILLA, MOSTRADOR…) en vez del código. Backend: `generarMetricas` arma `nombresComisionista` {código→nombre}; `metricasOriginal.por_comisionista` alimenta el gráfico (top-12 + "Otros").
 - **Sugerencia de teléfono: se revirtió parte de la "Opción A".** Ahora `sugerirCordoba()` (normalizar.js) completa con Córdoba `351` los teléfonos a los que solo les falta el código de área (abonado de 7 díg, o celular con "15" → se saca). Los que les falta un dígito o son basura siguen sin sugerencia (no se inventa). La sugerencia es clickeable en "Revisar Teléfonos" (`usarSugerencia` copia al Número Final). Decisión con Ariel: la mayoría de clientes son de Córdoba y Yhonny revisa antes de exportar.
 - **Borrar período guardado (issue #1):** botón 🗑️ por tarjeta en "Obleas Guardadas" (`eliminarPeriodo` → `DELETE /api/periodos/:id`). El endpoint ya existía; faltaba el botón.
 - **Guardar tras import InfoSys (issue #2):** aviso verde con botón "💾 Guardar período" tras traer, el botón del header pulsa y el badge dice "· sin guardar". Traer de InfoSys NO persiste solo — hay que guardar (igual que el CSV). Además se limpia `STATE.verificacion` al traer datos nuevos.
-- **Header:** config `talleresPropios` corregida a `IRT0550, HIT0797, QUT0867` (mostraba QUT0856).
+- **Header:** config `talleresPropios` corregida a `IRT0550, HIT0797, QUT0867` (mostraba QUT0856).  ⚠️ **Revertido en OB-8 (2026-08-18): el valor correcto era el original, QUT0856.**
 - **Sin cambios de infra.** Deploy por scp + rebuild (backups en `S18:.../_backup_deploy/`). **Cambios NO commiteados a git al momento de deployar** (el commit es este cierre).
 
 ### Estado al cierre 2026-07-17

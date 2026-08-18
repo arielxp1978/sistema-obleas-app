@@ -5,7 +5,7 @@ Sistema de gestión para el procesamiento de datos de obleas ENARGAS, normalizac
 ## Funcionalidades
 
 - **Carga CSV**: Upload de archivos exportados de ENARGAS (separador `;`, soporta campos entre comillas)
-- **Filtrado automático**: Reglas por `TCODTAL` (IRT0550 sin GNCOBS3, HIT0797, QUT0865)
+- **Filtrado automático**: Reglas por `TCODTAL` (IRT0550 sin GNCOBS3, HIT0797, QUT0856)
 - **Normalización de teléfonos**: Formato argentino 10 dígitos para WhatsApp
 - **Revisión manual**: Grilla editable con columna `+549` indicadora y contador de dígitos en tiempo real
 - **Ranking de usuarios**: % de error en teléfonos por operador (sobre la base **filtrada**)
@@ -26,7 +26,9 @@ Sistema de gestión para el procesamiento de datos de obleas ENARGAS, normalizac
 |--------|--------|
 | `IRT0550` | Nova Gral Paz (Sorvicor SRL) |
 | `HIT0797` | Nova R20 (Nova GNC SRL) |
-| `QUT0865` | Nova R20 (Grupo P5 SRL) |
+| `QUT0856` | Grupo P5 SRL (opera desde 12/2025) |
+
+> **Ojo con `QUT0867` y `QUT0865`: NO son de Nova.** `QUT0867` es CAR EQUIP S.A.S. y `QUT0865` no tiene razón social (714 ops en Cruz del Eje, 2023-2024). Estuvieron listados como propios por error hasta el 2026-08-18 (encargo OB-8). La lista viva es `TALLERES_PROPIOS` en `lib/procesar.js`.
 
 ## Setup local
 

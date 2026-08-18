@@ -121,9 +121,10 @@ async function enriquecerObleas(normalizados) {
 
 // Talleres propios de Nova (GP5 + Sorvicor) — usados para acotar la importación desde base.
 // FUENTE ÚNICA: se toma de procesar.js (TALLERES_PROPIOS) para que no haya dos listas que se
-// contradigan. Antes acá estaba hardcodeada ['HIT0797','IRT0550','QUT0856','QUT0865'] — MAL:
-// QUT0856/QUT0865 son talleres AJENOS (aparecían en un export mal armado) y faltaba QUT0867
-// (Grupo P5). Eso hacía que el import trajera obleas de otros talleres y perdiera las de P5.
+// contradigan. Ver ahí el detalle de qué código es cada empresa, verificado contra la razón
+// social de ENARGAS (encargo OB-8, 2026-08-18): QUT0856 = Grupo P5 (propio), QUT0867 = Car
+// Equip (ajeno). Antes esta lista incluía QUT0867 y no QUT0856, así que el import traía obleas
+// de un tercero y perdía las de Grupo P5 enteras.
 const NOVA_TALLERES = [...TALLERES_PROPIOS];
 
 // Normaliza UFECVENHAB de nova_operaciones (dos fuentes: ISO 'YYYY-MM-DD...' o CSV 'DD/MM/YYYY')
@@ -136,7 +137,7 @@ const SQL_VENC_EXPR = `
   END`;
 
 // Nombres legibles de taller (misma fuente que el frontend) y meses, para el export a ManyChat.
-const TALLER_NOMBRES = { 'IRT0550': 'Nova Gral Paz', 'HIT0797': 'Nova R20', 'QUT0867': 'Grupo P5' };
+const TALLER_NOMBRES = { 'IRT0550': 'Nova Gral Paz', 'HIT0797': 'Nova R20', 'QUT0856': 'Grupo P5' };
 const MESES_NOMBRE = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 function periodoLabel(id) {
   const [mes, anio] = String(id || '').split('-');
@@ -1016,7 +1017,7 @@ app.get('/api/config', (req, res) => {
     if (fs.existsSync(CONFIG_PATH)) {
       res.json(JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8')));
     } else {
-      res.json({ apiUrl: 'https://consultas-gnc.arielxp.workers.dev', apiKey: '', delay: 500, pecPropios: ['3145', '3286'], talleresPropios: ['IRT0550', 'HIT0797'] });
+      res.json({ apiUrl: 'https://consultas-gnc.arielxp.workers.dev', apiKey: '', delay: 500, pecPropios: ['3145', '3286'], talleresPropios: ['IRT0550', 'HIT0797', 'QUT0856'] });
     }
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
