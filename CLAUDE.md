@@ -516,6 +516,27 @@ ssh akeneo@100.72.42.104 "cat /home/akeneo/sistema-obleas-app/data/config.json"
 ```
 Si trae `talleresPropios` con `QUT0867`/`QUT0865`, corregirlo ahí (o desde Configuración en la UI). Afecta a `verificar.js`, que lee talleres propios de la config, no de `TALLERES_PROPIOS`.
 
+**Hallazgo al revisar con Ariel — los códigos de taller CAMBIAN (2026-08-18):** un taller que se da de baja y se reactiva suele volver con otro `TCODTAL`. Pasó con el nuestro: Ruta 20 dejó de operar como `HIT0797` (NOVA GNC SRL) y pasó a `QUT0856` (GRUPO P5 S.R.L.) en **diciembre 2025**, en un relevo limpio:
+
+| Mes | HIT0797 | QUT0856 | IRT0550 |
+|---|---|---|---|
+| 2025-11 | 414 | 0 | 757 |
+| **2025-12** | **101** | **393** | 922 |
+| 2026-01 | 1 | 424 | 801 |
+| 2026-07 | 0 | 505 | 1.701 |
+
+No es un taller nuevo: es el mismo local con código y sociedad nuevos. Por eso el error de la lista pegaba tan fuerte en 2026 — `HIT0797` aporta **0** operaciones y todo Ruta 20 vive en `QUT0856`. En lo que va de 2026 faltaban 3.162 ops propias y sobraban 1.202 ajenas.
+
+⚠️ **Consecuencia para el diseño:** una lista fija de códigos se rompe **en silencio** cada vez que ENARGAS recodifica un taller — no falla nada, simplemente los números salen mal. `HIT0797` se deja en `TALLERES_PROPIOS` porque cubre el histórico hasta 11/2025. Si en algún momento se corrigen los números y no cierran, **lo primero a revisar es si apareció un código nuevo**:
+
+```sql
+SELECT taller_codigo, max(datos_raw->>'TRAZSOC') rs, count(*) ops, max(fecha_operacion) ultima
+FROM nova_operaciones WHERE fecha_operacion >= now() - interval '3 months'
+GROUP BY 1 ORDER BY 3 DESC LIMIT 20;
+```
+
+Ojo: `nova_operaciones` trae ~100 talleres (todos los que operan con nuestros PECs 3145/3286), no solo los de Nova. El código de taller nunca alcanzó por sí solo para decir "esto es nuestro" — hay que mirar la razón social. Ejemplo verificado con Ariel: la patente `FLI070` figura en 2024 con `QUT0865` y `pec_origen=3145`; el taller era **Zambrano** (CUIT 20-11801086-9) usando nuestro PEC. En 2026 Zambrano ya tiene PEC propio, y por eso esa operación no aparece más en el feed. El feed **no trae CUIT** (`TCUIT`/`PCUIT` vacíos), así que hoy la única identificación de empresa es la razón social.
+
 **Cómo comprobar que quedó bien:** reimportar un mes de 2026 y comparar contra la corrida anterior — el total debe **bajar** por las operaciones de Car Equip que ya no entran y **subir** por las de Grupo P5 que antes se perdían. Si un mes de 2026 no cambia en nada, quedó un hardcodeo en otro lado.
 
 ### Estado al cierre 2026-08-14 (ajustes tab "Descargar Archivos") — commit `d311dba`
