@@ -377,12 +377,23 @@ input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 2px rg
     <div class="charts-row mb-4">
       <div class="card"><canvas id="chartVerif"></canvas></div>
     </div>
-    <div class="flex gap-2 mb-4">
+    <div class="flex gap-2 mb-4" style="flex-wrap:wrap;">
       <button class="btn btn-success" onclick="exportarVerifCSV()">📥 Exportar CSV</button>
+      <button class="btn btn-primary" onclick="generarVerifPDF()">📄 Descargar PDF (resumen)</button>
       <button class="btn hidden" id="btnReintentarFallidos" onclick="reintentarFallidos()"
         style="background:rgba(255,109,0,.15);border-color:#ff6d00;color:#ff6d00;">
         🔄 Reintentar fallidos (<span id="countFallidos">0</span>)
       </button>
+    </div>
+    <div class="flex gap-2 items-center mb-4" style="flex-wrap:wrap;">
+      <label style="font-size:.85em;color:var(--text-sec);display:flex;align-items:center;gap:6px;">
+        Filtrar por clasificación:
+        <select id="verifFiltroClasif" onchange="renderVerifTabla(this.value)"
+          style="padding:6px 8px;border:1px solid var(--border);border-radius:8px;font-size:.9em;">
+          <option value="">Todos</option>
+        </select>
+      </label>
+      <span id="verifFiltroCount" style="font-size:.82em;color:var(--text-sec);"></span>
     </div>
     <div class="table-wrap" id="tablaVerif" style="max-height:500px;"></div>
   </div>
@@ -1642,6 +1653,46 @@ function cancelarVerificacion() {
   document.getElementById('verifStatus').textContent = '✕ Polling cancelado';
 }
 
+// Etiquetas / colores / badges de clasificación — a nivel módulo para que los usen
+// renderVerifResultados, renderVerifTabla y generarVerifPDF sin duplicarlos.
+const VERIF_LABELS = {
+  NUESTRO_PEC_NUESTRO_TALLER: 'Nuestro PEC + Nuestro Taller',
+  NUESTRO_PEC_OTRO_TALLER:    'Nuestro PEC + Taller Externo',
+  OTRO_PEC:                   'Otro PEC',
+  NO_RENOVO:                  'No Renovó',
+  SIN_REGISTRO_GNC:           'Sin registro GNC',
+  SIN_GNC:                    'Sin GNC',
+  BAJA_GNC:                   'Dado de baja / Desmontaje',
+  FORMATO_INVALIDO:           'Formato inválido',
+  ERROR_TECNICO:              'Error técnico (reintentar)',
+  PROCESANDO:                 'Procesando...',
+  PENDIENTE:                  'Pendiente'
+};
+const VERIF_COLORS = {
+  NUESTRO_PEC_NUESTRO_TALLER: '#34a853',
+  NUESTRO_PEC_OTRO_TALLER:    '#4285f4',
+  OTRO_PEC:                   '#fbbc04',
+  NO_RENOVO:                  '#ea4335',
+  SIN_REGISTRO_GNC:           '#9e9e9e',
+  SIN_GNC:                    '#b0bec5',
+  BAJA_GNC:                   '#6d4c41',
+  FORMATO_INVALIDO:           '#78909c',
+  ERROR_TECNICO:              '#ff6d00',
+  PROCESANDO:                 '#7c4dff',
+  PENDIENTE:                  '#9e9e9e'
+};
+const VERIF_BADGES = {
+  NUESTRO_PEC_NUESTRO_TALLER: 'badge-ok', NUESTRO_PEC_OTRO_TALLER: 'badge-ok',
+  OTRO_PEC: 'badge-leve', NO_RENOVO: 'badge-rechazar',
+  SIN_REGISTRO_GNC: 'badge-leve', SIN_GNC: 'badge-leve',
+  BAJA_GNC: 'badge-rechazar', FORMATO_INVALIDO: 'badge-leve',
+  ERROR_TECNICO: 'badge-leve', PROCESANDO: 'badge-leve'
+};
+// Teléfono a mostrar en la tabla: prioriza la corrección manual de Yhonny.
+function telVerif(reg) {
+  return (reg && (reg.UTELEFONO_FINAL || reg.UTELEFONO_WHATSAPP || reg.UTELEFONO || reg.UTELEFONO_ORIGINAL)) || '';
+}
+
 function renderVerifResultados() {
   if (!STATE.verificacion) return;
   const panel = document.getElementById('verifResultados');
@@ -1652,39 +1703,29 @@ function renderVerifResultados() {
     const c = r.clasificacion.codigo;
     resumen[c] = (resumen[c] || 0) + 1;
   });
+  const total = STATE.verificacion.length || 0;
 
-  const labels = {
-    NUESTRO_PEC_NUESTRO_TALLER: 'Nuestro PEC + Nuestro Taller',
-    NUESTRO_PEC_OTRO_TALLER:    'Nuestro PEC + Taller Externo',
-    OTRO_PEC:                   'Otro PEC',
-    NO_RENOVO:                  'No Renovó',
-    SIN_REGISTRO_GNC:           'Sin registro GNC',
-    SIN_GNC:                    'Sin GNC',
-    BAJA_GNC:                   'Dado de baja / Desmontaje',
-    FORMATO_INVALIDO:           'Formato inválido',
-    ERROR_TECNICO:              'Error técnico (reintentar)',
-    PROCESANDO:                 'Procesando...',
-    PENDIENTE:                  'Pendiente'
-  };
-  const colors = {
-    NUESTRO_PEC_NUESTRO_TALLER: '#34a853',
-    NUESTRO_PEC_OTRO_TALLER:    '#4285f4',
-    OTRO_PEC:                   '#fbbc04',
-    NO_RENOVO:                  '#ea4335',
-    SIN_REGISTRO_GNC:           '#9e9e9e',
-    SIN_GNC:                    '#b0bec5',
-    BAJA_GNC:                   '#6d4c41',
-    FORMATO_INVALIDO:           '#78909c',
-    ERROR_TECNICO:              '#ff6d00',
-    PROCESANDO:                 '#7c4dff',
-    PENDIENTE:                  '#9e9e9e'
-  };
+  const labels = VERIF_LABELS, colors = VERIF_COLORS;
 
+  // KPIs con cantidad + % del total verificado.
   let metricsHtml = '';
   Object.entries(resumen).forEach(([k, v]) => {
-    metricsHtml += `<div class="metric-card"><div class="value" style="color:${colors[k] || '#333'}">${v}</div><div class="label">${labels[k] || k}</div></div>`;
+    const pct = total > 0 ? (Math.round(v / total * 1000) / 10) : 0;
+    metricsHtml += `<div class="metric-card"><div class="value" style="color:${colors[k] || '#333'}">${v}</div><div class="label">${labels[k] || k}</div><div style="font-size:.85em;font-weight:600;color:var(--text-sec);margin-top:2px;">${pct}%</div></div>`;
   });
   document.getElementById('verifMetrics').innerHTML = metricsHtml;
+
+  // Poblar el selector de filtro por clasificación (default Todos), preservando la selección.
+  const sel = document.getElementById('verifFiltroClasif');
+  if (sel) {
+    const prev = sel.value;
+    let opts = `<option value="">Todos (${total})</option>`;
+    Object.entries(resumen).sort((a, b) => b[1] - a[1]).forEach(([k, v]) => {
+      opts += `<option value="${k}">${labels[k] || k} (${v})</option>`;
+    });
+    sel.innerHTML = opts;
+    sel.value = resumen[prev] ? prev : '';
+  }
 
   // Contar errores reintentables (código 3 = ERROR_TECNICO, código 4 = PROCESANDO)
   const fallidos = STATE.verificacion.filter(r =>
@@ -1705,21 +1746,77 @@ function renderVerifResultados() {
     options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
   });
 
-  let html = '<table><thead><tr><th>Dominio</th><th>Nombre</th><th>Clasificación</th><th>PEC</th><th>Taller</th><th>Fecha Op.</th><th>Nuevo Vto.</th></tr></thead><tbody>';
-  STATE.verificacion.forEach(r => {
+  renderVerifTabla(sel ? sel.value : '');
+}
+
+// Renderiza la tabla de resultados, opcionalmente filtrada por código de clasificación.
+// filtro = '' → todos. Incluye columna Teléfono.
+function renderVerifTabla(filtro) {
+  const cont = document.getElementById('tablaVerif');
+  if (!cont) return;
+  const filas = (STATE.verificacion || []).filter(r => !filtro || r.clasificacion.codigo === filtro);
+  const cnt = document.getElementById('verifFiltroCount');
+  if (cnt) cnt.textContent = filtro ? `${filas.length} de ${STATE.verificacion.length}` : `${filas.length} en total`;
+
+  let html = '<table><thead><tr><th>Dominio</th><th>Nombre</th><th>Teléfono</th><th>Clasificación</th><th>PEC</th><th>Taller</th><th>Fecha Op.</th><th>Nuevo Vto.</th></tr></thead><tbody>';
+  filas.forEach(r => {
     const c = r.clasificacion;
-    const badgeMap = {
-      NUESTRO_PEC_NUESTRO_TALLER: 'badge-ok', NUESTRO_PEC_OTRO_TALLER: 'badge-ok',
-      OTRO_PEC: 'badge-leve', NO_RENOVO: 'badge-rechazar',
-      SIN_REGISTRO_GNC: 'badge-leve', SIN_GNC: 'badge-leve',
-      BAJA_GNC: 'badge-rechazar', FORMATO_INVALIDO: 'badge-leve',
-      ERROR_TECNICO: 'badge-leve', PROCESANDO: 'badge-leve'
-    };
-    const badge = badgeMap[c.codigo] || 'badge-leve';
-    html += `<tr><td>${r.registro.UDOMINIO}</td><td>${r.registro.UAPEYNOM}</td><td><span class="badge ${badge}">${c.texto}</span></td><td>${c.pecNombre}</td><td>${c.tallerNombre}</td><td>${c.fechaOp}</td><td>${c.nuevoVto}</td></tr>`;
+    const badge = VERIF_BADGES[c.codigo] || 'badge-leve';
+    html += `<tr><td>${esc(r.registro.UDOMINIO)}</td><td>${esc(r.registro.UAPEYNOM)}</td><td>${esc(telVerif(r.registro))}</td><td><span class="badge ${badge}">${esc(c.texto)}</span></td><td>${esc(c.pecNombre)}</td><td>${esc(c.tallerNombre)}</td><td>${esc(c.fechaOp)}</td><td>${esc(c.nuevoVto)}</td></tr>`;
   });
   html += '</tbody></table>';
-  document.getElementById('tablaVerif').innerHTML = html;
+  if (!filas.length) html = '<p style="color:var(--text-sec);padding:8px;">No hay registros con esa clasificación.</p>';
+  cont.innerHTML = html;
+}
+
+// PDF de RESUMEN de la verificación post-envío: solo lo necesario para completar la hoja
+// (título, total, KPIs con % y el gráfico). NO incluye el listado de clientes.
+function generarVerifPDF() {
+  if (!STATE.verificacion || !STATE.verificacion.length) { alert('Primero corré una verificación.'); return; }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+  const periodo = STATE.periodo || 'sin-fecha';
+  const [mes, anio] = periodo.split('-');
+  const meses = ['','Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  const mesNombre = meses[parseInt(mes)] || mes;
+  const titulo = `Verificación Post-Envío ${mesNombre} ${anio}`;
+
+  const resumen = {};
+  STATE.verificacion.forEach(r => { const c = r.clasificacion.codigo; resumen[c] = (resumen[c] || 0) + 1; });
+  const total = STATE.verificacion.length;
+
+  // Header
+  doc.setFontSize(18); doc.setTextColor(26, 115, 232); doc.text('Nova GNC', 14, 20);
+  doc.setFontSize(14); doc.setTextColor(32, 33, 36); doc.text(titulo, 14, 30);
+  doc.setFontSize(9); doc.setTextColor(95, 99, 104);
+  doc.text(`Generado: ${new Date().toLocaleString('es-AR')}`, 14, 36);
+  doc.setFontSize(11); doc.setTextColor(32, 33, 36);
+  doc.text(`Total verificado: ${total}`, 14, 45);
+
+  // Orden fijo para la hoja (los presentes; los desconocidos al final)
+  const orden = ['NUESTRO_PEC_NUESTRO_TALLER','NUESTRO_PEC_OTRO_TALLER','OTRO_PEC','NO_RENOVO','SIN_REGISTRO_GNC','SIN_GNC','BAJA_GNC','FORMATO_INVALIDO','ERROR_TECNICO','PROCESANDO','PENDIENTE'];
+  const idx = c => { const i = orden.indexOf(c); return i < 0 ? 999 : i; };
+  const body = Object.entries(resumen)
+    .sort((a, b) => idx(a[0]) - idx(b[0]))
+    .map(([k, v]) => [VERIF_LABELS[k] || k, String(v), (total > 0 ? Math.round(v / total * 1000) / 10 : 0) + '%']);
+  doc.autoTable({
+    startY: 50,
+    head: [['Clasificación', 'Cantidad', '%']],
+    body,
+    theme: 'striped', headStyles: { fillColor: [26, 115, 232] }
+  });
+
+  // Gráfico (imagen del donut de la pantalla)
+  try {
+    const canvas = document.getElementById('chartVerif');
+    if (canvas) {
+      const img = canvas.toDataURL('image/png', 1.0);
+      const y = doc.lastAutoTable.finalY + 10;
+      doc.addImage(img, 'PNG', 65, y, 80, 80);
+    }
+  } catch (e) { /* si el canvas no está disponible, el PDF igual sale con la tabla */ }
+
+  doc.save(`${titulo.replace(/\s+/g, '_')}.pdf`);
 }
 
 async function reintentarFallidos() {
