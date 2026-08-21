@@ -563,6 +563,22 @@ app.get('/api/lote/:jobId', async (req, res) => {
   }
 });
 
+// Borra un job de dalegas → frena el escaneo a S14 en el servidor (no solo el polling del navegador).
+// Lo usa "Cancelar" y "re-analizar de cero". La API key queda en el server.
+app.delete('/api/lote/:jobId', async (req, res) => {
+  try {
+    const resp = await fetch(`${DALEGAS_API_URL}/api/lote/${req.params.jobId}`, {
+      method: 'DELETE',
+      headers: { 'X-API-Key': DALEGAS_API_KEY },
+      signal: AbortSignal.timeout(30000)
+    });
+    const data = await resp.json().catch(() => ({}));
+    res.status(resp.status).json(data);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.post('/api/notificar-lote', async (req, res) => {
   const { periodoNombre, total, ok, errores } = req.body;
   await notificarLoteCompletado(periodoNombre, total, ok, errores);
