@@ -1909,10 +1909,11 @@ async function reintentarFallidos() {
 
 function exportarVerifCSV() {
   if (!STATE.verificacion) return;
-  const header = 'DOMINIO;NOMBRE;CLASIFICACION;PEC;TALLER;TALLER_COD;PEC_COD;FECHA_OP;NUEVO_VTO';
+  const header = 'DOMINIO;NOMBRE;TELEFONO;CLASIFICACION;PEC;TALLER;TALLER_COD;PEC_COD;FECHA_OP;NUEVO_VTO';
+  const limpio = v => String(v == null ? '' : v).replace(/[;\n\r]+/g, ' ').trim();
   const lines = STATE.verificacion.map(r => {
     const c = r.clasificacion;
-    return [r.registro.UDOMINIO, r.registro.UAPEYNOM, c.texto, c.pecNombre, c.tallerNombre, c.tallerCodigo, c.pecCodigo, c.fechaOp, c.nuevoVto].join(';');
+    return [r.registro.UDOMINIO, r.registro.UAPEYNOM, telVerif(r.registro), c.texto, c.pecNombre, c.tallerNombre, c.tallerCodigo, c.pecCodigo, c.fechaOp, c.nuevoVto].map(limpio).join(';');
   });
   const blob = new Blob([header + '\n' + lines.join('\n')], { type: 'text/csv' });
   const url = URL.createObjectURL(blob);
