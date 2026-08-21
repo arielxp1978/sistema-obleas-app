@@ -539,6 +539,47 @@ Ojo: `nova_operaciones` trae ~100 talleres (todos los que operan con nuestros PE
 
 **Cómo comprobar que quedó bien:** reimportar un mes de 2026 y comparar contra la corrida anterior — el total debe **bajar** por las operaciones de Car Equip que ya no entran y **subir** por las de Grupo P5 que antes se perdían. Si un mes de 2026 no cambia en nada, quedó un hardcodeo en otro lado.
 
+### Estado al cierre 2026-08-21 (verificación post-envío + reporte + inyección + ES-21/GP-39)
+Sesión larga de mejoras (todo desplegado por scp+rebuild y commiteado). Commits: `85a1ffc`, `ad74c68`,
+`284756d`, `4ca5688`, `0442d0c` (obleas) + `b198190` (inyección, del bloque anterior).
+
+**Verificación post-envío (`renderVerifResultados` / tab Verificación):**
+- **KPIs con %** del total verificado (además de la cantidad).
+- **PDF de resumen** (`generarVerifPDF`, botón "Descargar PDF (resumen)"): título, total, tabla
+  clasificación con %, y el gráfico. **Sin listado de clientes** (jsPDF + autoTable).
+- Tabla: **columna Teléfono** (`telVerif`: prioriza `UTELEFONO_FINAL`) + **filtro por clasificación**
+  (`renderVerifTabla(filtro)`, default Todos). Labels/colores/badges hoisteados a `VERIF_LABELS`/
+  `VERIF_COLORS`/`VERIF_BADGES` (nivel módulo).
+- **CSV** (`exportarVerifCSV`) ahora incluye **columna TELEFONO** + sanitizado de `;`/saltos.
+- **Re-analizar de cero ya NO manda `force:true`.** Ahora borra el job anterior (DELETE) y corre con
+  **`force:false`** → resuelve desde nuestra base (ES-21) y va a S14 solo por lo que falte. `force:true`
+  salteaba la base y mandaba TODO a S14 (era la causa del "cache:0 | S14:464" que reportó Ariel).
+- **"Cancelar" ahora frena el job de verdad:** proxy nuevo **`DELETE /api/lote/:jobId`** en server.js;
+  `cancelarVerificacion` borra el job en dalegas (detiene S14). En modo "solo ver" NO borra (guardados).
+- Diálogos de "ya existe / re-analizar" reescritos, mucho más claros.
+
+**Reporte PDF — Obleas Vencidas (`generarReportePDF` / tab Reporte):**
+- **Sección "Resultados de Verificación (Renovación)"** con No Renovó + % (si hay verificación corrida).
+- **Objetivo de renovaciones (carga MANUAL):** input "🎯 Objetivo de renovaciones (Nova) del mes";
+  se guarda con el período (`objetivoRenovaciones` en el JSON), se resetea con cada dataset nuevo, se
+  recarga al abrir un período. Vista previa + PDF muestran **Objetivo · Realidad · Desfasaje ·
+  Cumplimiento**. **Realidad = `NUESTRO_PEC_NUESTRO_TALLER`** (helper `realidadRenovacionesNova`).
+  **INTERINO:** los objetivos NO existen hoy en cdp_nova/panel (verificado: solo hay `presupuesto_*`/
+  `cotizador_*`, que son el cotizador). Ariel definirá la fuente oficial (dijo "panel/CDP") más
+  adelante → cuando exista, obleas la lee y el campo manual queda de fallback.
+
+**Dependencias cross-proyecto resueltas esta sesión (ambas HECHAS):**
+- **ES-21 (Enargas Scrap):** `dalegas /api/lote` ahora resuelve **cache-first desde `enargas_data`**
+  (`nova_operaciones` = infosys al momento + `historial_obleas_datos` = scans 48h) y solo escanea S14
+  en vivo por lo que falta. La respuesta suma `desde_base:{infosys,scan_db,frescura}`. La verificación
+  de obleas se beneficia sin cambios (mismo formato). Verificado end-to-end (smoke test 5/8 desde base).
+- **GP-39 (organizacion-gp5):** el plan del inyector expone `porGrupo[].tags` (etiquetas completas) y
+  numera las **V correlativas entre grupos** (PH Urgente → PH → Obleas). `renderInyeccionPlan` ya lo
+  muestra (commit `b198190`). Preview colapsa la tabla de archivos al presionarlo.
+
+**Nota de infra:** el flujo de verificación sigue siendo obleas → dalegas (proxy `/api/lote`). Obleas
+NO consulta `enargas_data` por su cuenta en la verificación — el "base-first" lo hace dalegas (ES-21).
+
 ### Estado al cierre 2026-08-14 (ajustes tab "Descargar Archivos") — commit `d311dba`
 Cuatro ajustes pedidos por Ariel sobre el tab **Descargar Archivos** (todo desplegado por scp+rebuild y commiteado):
 1. **BUG PH corregido (importante).** `tipoGestion(r)` ahora **prioriza `_tipoGestion`** (que sí sobrevive `mapRegistro`), con `UCODGEST` de fallback. Causa raíz: `mapRegistro` (lo que queda en `STATE.registros`) **no reexpone `UCODGEST`**; al cambiar "teléfonos por archivo", `regenerarArchivos` reenviaba esos registros a `/api/generar-archivos` → `dividirArchivos` reclasificaba TODO como oblea → **los archivos PH desaparecían y no volvían** ni bajando de nuevo el número. Probado con round-trip 50→100→50: PH se mantiene. **Si tocás `mapRegistro` o `tipoGestion`, no vuelvas a depender de `UCODGEST` en el path de regeneración.**
