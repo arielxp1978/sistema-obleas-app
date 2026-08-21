@@ -407,6 +407,15 @@ input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 2px rg
       Generá un reporte PDF acumulativo con métricas de retención, renovaciones y estado de teléfonos.
       El reporte incluye datos del período cargado actualmente.
     </div>
+    <div class="flex gap-4 items-center mb-4" style="flex-wrap:wrap;">
+      <label style="font-size:.9em;display:flex;align-items:center;gap:8px;">
+        🎯 Objetivo de renovaciones (Nova) del mes:
+        <input type="number" id="inputObjetivoRenov" min="0" placeholder="ej. 200"
+          onchange="STATE.objetivoRenovaciones = parseInt(this.value) || 0; STATE.sinGuardar = true; renderReportePreview();"
+          style="width:110px;padding:6px 8px;border:1px solid var(--border);border-radius:8px;font-size:1em;">
+      </label>
+      <span style="font-size:.78em;color:var(--text-sec);">Se guarda con el período (💾). La “realidad” sale de la verificación (Nuestro PEC + Nuestro Taller).</span>
+    </div>
     <div class="flex gap-4 items-center mb-4">
       <button class="btn btn-primary" onclick="generarReportePDF()">📄 Descargar Reporte PDF</button>
       <span id="reporteMsg" style="font-size:.85em;color:var(--text-sec);"></span>
@@ -502,8 +511,20 @@ let STATE = {
   excluidosComisionista: null,
   archivosCargados: [],
   porArchivo: 100,
+  objetivoRenovaciones: 0,   // objetivo de renovaciones en Nova del mes (carga manual, se guarda con el período)
   config: {}
 };
+
+// Realidad = renovaciones en Nova (Nuestro PEC + Nuestro Taller) de la verificación.
+function realidadRenovacionesNova() {
+  return (STATE.verificacion || []).filter(r => r.clasificacion && r.clasificacion.codigo === 'NUESTRO_PEC_NUESTRO_TALLER').length;
+}
+// Setea el objetivo en STATE y refleja el valor en el input de la pestaña Reporte.
+function setObjetivoRenov(v) {
+  STATE.objetivoRenovaciones = parseInt(v) || 0;
+  const el = document.getElementById('inputObjetivoRenov');
+  if (el) el.value = STATE.objetivoRenovaciones || '';
+}
 
 let charts = {};
 const MESES = ['','Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
@@ -596,6 +617,7 @@ async function procesarArchivo(files) {
     STATE.resumenTipo = data.resumenTipo || null;
     STATE.archivosCargados = data.archivosCargados || [];
     STATE.verificacion = null;  // dataset nuevo → descartar cualquier verificación previa en memoria
+    setObjetivoRenov(0);        // objetivo es por mes → se resetea con cada dataset nuevo
 
     document.getElementById('btnGuardar').classList.remove('hidden');
     STATE.sinGuardar = true;
@@ -706,6 +728,7 @@ async function importarDesdeBase() {
     STATE.resumenTipo = data.resumenTipo || null;
     STATE.excluidosComisionista = data.excluidosComisionista || null;
     STATE.verificacion = null;  // dataset nuevo → descartar cualquier verificación previa en memoria
+    setObjetivoRenov(0);        // objetivo es por mes → se resetea con cada dataset nuevo
 
     document.getElementById('btnGuardar').classList.remove('hidden');
     STATE.sinGuardar = true;
@@ -2019,6 +2042,7 @@ async function guardarPeriodo() {
     metricasFiltrado: STATE.metricasFiltrado,
     normalizacion: STATE.normalizacion,
     registros: STATE.registros,
+    objetivoRenovaciones: STATE.objetivoRenovaciones || 0,
     verificacion: STATE.verificacion ? {
       resumen: {},
       detalle: STATE.verificacion
@@ -2105,6 +2129,7 @@ async function cargarPeriodo(id) {
     STATE.totalOriginal = data.totalOriginal;
     STATE.totalFiltrado = data.totalFiltrado;
     STATE.verificacion = data.verificacion?.detalle || null;
+    setObjetivoRenov(data.objetivoRenovaciones || 0);
 
     document.getElementById('btnGuardar').classList.remove('hidden');
     STATE.sinGuardar = true;
@@ -2191,6 +2216,27 @@ function renderReportePreview() {
     </div>
     <p style="margin-top:12px;"><strong>Período:</strong> ${STATE.periodo} | <strong>Top provincias:</strong> ${topProv.map(e => e[0]+': '+e[1]).join(', ')}</p>
   `;
+
+  // Objetivo vs Realidad vs Desfasaje (renovaciones en Nova). Solo si se cargó un objetivo.
+  const obj = STATE.objetivoRenovaciones || 0;
+  if (obj > 0) {
+    const real = realidadRenovacionesNova();
+    const desf = real - obj;                         // negativo = por debajo del objetivo
+    const cumpl = obj > 0 ? Math.round(real / obj * 1000) / 10 : 0;
+    const colDesf = desf >= 0 ? 'var(--success)' : 'var(--danger, #ea4335)';
+    const notaVerif = STATE.verificacion ? '' : ' <span style="color:var(--warning);">(corré la verificación para la realidad)</span>';
+    html += `
+      <div style="margin-top:14px;padding:12px 14px;border:1px solid var(--border);border-radius:8px;background:#fff;">
+        <div style="font-weight:600;margin-bottom:8px;">🎯 Objetivo vs Realidad — Renovaciones en Nova${notaVerif}</div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;">
+          <div class="metric-card" style="flex:1;min-width:120px;"><div class="value">${obj}</div><div class="label">Objetivo</div></div>
+          <div class="metric-card" style="flex:1;min-width:120px;"><div class="value" style="color:var(--success)">${real}</div><div class="label">Realidad</div></div>
+          <div class="metric-card" style="flex:1;min-width:120px;"><div class="value" style="color:${colDesf}">${desf >= 0 ? '+' : ''}${desf}</div><div class="label">Desfasaje</div></div>
+          <div class="metric-card" style="flex:1;min-width:120px;"><div class="value" style="color:${colDesf}">${cumpl}%</div><div class="label">Cumplimiento</div></div>
+        </div>
+      </div>`;
+  }
+
   document.getElementById('reporteContenido').innerHTML = html;
 }
 
@@ -2273,6 +2319,28 @@ function generarReportePDF() {
     doc.setFontSize(9); doc.setTextColor(234, 67, 53);
     doc.text('Nota: corré la Verificación Post-Envío para incluir el detalle de renovación (No Renovó, etc.).', 14, yv);
     doc.setFontSize(12); doc.setTextColor(32, 33, 36);
+  }
+
+  // Objetivo vs Realidad (renovaciones en Nova) — solo si se cargó un objetivo.
+  if ((STATE.objetivoRenovaciones || 0) > 0) {
+    const objP = STATE.objetivoRenovaciones;
+    const realP = realidadRenovacionesNova();
+    const desfP = realP - objP;
+    const cumplP = objP > 0 ? Math.round(realP / objP * 1000) / 10 : 0;
+    let yo = doc.lastAutoTable.finalY + 12;
+    doc.setFontSize(12); doc.setTextColor(32, 33, 36);
+    doc.text('Objetivo vs Realidad — Renovaciones en Nova', 14, yo);
+    doc.autoTable({
+      startY: yo + 4,
+      head: [['Métrica', 'Valor']],
+      body: [
+        ['Objetivo del mes', objP.toString()],
+        ['Realidad (Nuestro PEC + Nuestro Taller)', realP.toString()],
+        ['Desfasaje', (desfP >= 0 ? '+' : '') + desfP],
+        ['Cumplimiento', cumplP + '%'],
+      ],
+      theme: 'striped', headStyles: { fillColor: [123, 77, 255] }
+    });
   }
 
   // Distribución por taller
