@@ -485,7 +485,8 @@ Pantalla para auditar la calidad del teléfono que carga un taller (o un comisio
 3. **Guía de uso para Yhonny** — documento operativo paso a paso del flujo nuevo (subir Vencimientos Usuarios → revisar teléfonos → descargar obleas/PH → ManyChat).
 4. **Importación automática a ManyChat** — ✅ **resuelto en OB-5** (botón "🚀 Inyectar a ManyChat" en el tab Descargar Archivos, ver sección OB-5). El ZIP queda como respaldo.
 5. **Sincronizar estructura local ↔ S18** — evaluar deploy script o GitHub Action (hoy es scp + rebuild manual).
-6. **`verificar.js` legacy** — no hardcodea talleres: usa `config.talleresPropios` (default del endpoint `/api/config` en server.js, hoy `IRT0550, HIT0797, QUT0856`). Si hay un `data/config.json` guardado en S18 con la lista vieja, **ese archivo pisa el default** — revisarlo tras un cambio de talleres.
+6. **Migrar a la fuente única de talleres cuando exista (encargo `CEO-84`)** — hoy `TALLERES_PROPIOS` es una lista fija, y el código de taller de ENARGAS **no es estable** (ver el hallazgo de 2026-08-18 más abajo). Cuando el CEO defina la identidad única de talleres en `cdp_nova`, hay que sacar la lista de `procesar.js` y consumir esa fuente. Hasta entonces la lista es correcta pero frágil: se rompe en silencio si ENARGAS recodifica un taller nuestro.
+7. **`verificar.js` legacy** — no hardcodea talleres: usa `config.talleresPropios` (default del endpoint `/api/config` en server.js, hoy `IRT0550, HIT0797, QUT0856`). Si hay un `data/config.json` guardado en S18 con la lista vieja, **ese archivo pisa el default** — revisarlo tras un cambio de talleres.
 
 ### Estado al cierre 2026-08-18 (OB-8) — Corregido el taller propio mal listado
 
