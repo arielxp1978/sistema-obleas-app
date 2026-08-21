@@ -2251,8 +2251,33 @@ function generarReportePDF() {
     theme: 'striped', headStyles: { fillColor: [26, 115, 232] }
   });
 
+  // Resultados de Verificación (Renovación) — incluye "No Renovó". Solo si se corrió la verificación.
+  if (STATE.verificacion && STATE.verificacion.length) {
+    const resumenV = {};
+    STATE.verificacion.forEach(r => { const c = r.clasificacion.codigo; resumenV[c] = (resumenV[c] || 0) + 1; });
+    const totalV = STATE.verificacion.length;
+    const ordenV = ['NUESTRO_PEC_NUESTRO_TALLER','NUESTRO_PEC_OTRO_TALLER','OTRO_PEC','NO_RENOVO','SIN_REGISTRO_GNC','SIN_GNC','BAJA_GNC','FORMATO_INVALIDO','ERROR_TECNICO','PROCESANDO','PENDIENTE'];
+    const idxV = c => { const i = ordenV.indexOf(c); return i < 0 ? 999 : i; };
+    let yv = doc.lastAutoTable.finalY + 12;
+    doc.setFontSize(12); doc.setTextColor(32, 33, 36);
+    doc.text('Resultados de Verificación (Renovación)', 14, yv);
+    doc.autoTable({
+      startY: yv + 4,
+      head: [['Clasificación', 'Cantidad', '% del Total']],
+      body: Object.entries(resumenV).sort((a, b) => idxV(a[0]) - idxV(b[0]))
+        .map(([k, v]) => [VERIF_LABELS[k] || k, v.toString(), (totalV > 0 ? Math.round(v / totalV * 1000) / 10 : 0) + '%']),
+      theme: 'striped', headStyles: { fillColor: [234, 67, 53] }
+    });
+  } else {
+    let yv = doc.lastAutoTable.finalY + 10;
+    doc.setFontSize(9); doc.setTextColor(234, 67, 53);
+    doc.text('Nota: corré la Verificación Post-Envío para incluir el detalle de renovación (No Renovó, etc.).', 14, yv);
+    doc.setFontSize(12); doc.setTextColor(32, 33, 36);
+  }
+
   // Distribución por taller
   let y = doc.lastAutoTable.finalY + 12;
+  doc.setFontSize(12); doc.setTextColor(32, 33, 36);
   doc.text('Distribución por Taller', 14, y);
   const tcodtal = STATE.metricasFiltrado?.por_tcodtal || {};
   doc.autoTable({
