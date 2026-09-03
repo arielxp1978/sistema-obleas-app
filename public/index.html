@@ -95,6 +95,12 @@ input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 2px rg
 .alert-info { background:#e8f0fe; color:#1a73e8; border:1px solid #c5d9f5; }
 .alert-success { background:#e6f4ea; color:#1e8e3e; border:1px solid #b7e1cd; }
 .alert-warning { background:#fef7e0; color:#e37400; border:1px solid #fdd663; }
+.alert-danger { background:#fce8e6; color:#c5221f; border:1px solid #f6aea9; }
+.iny-errores { margin:8px 0 0; padding:0; list-style:none; }
+.iny-errores li { display:flex; gap:8px; align-items:baseline; padding:5px 0; border-top:1px solid rgba(0,0,0,.10); word-break:break-word; }
+.iny-errores li:first-child { border-top:none; }
+.iny-err-n { flex:0 0 auto; font-weight:700; font-variant-numeric:tabular-nums; }
+.iny-err-msg { font-family:'SF Mono',Menlo,Consolas,monospace; font-size:.95em; }
 /* Tooltip */
 .tooltip-wrap { position:relative; display:inline-block; }
 .tooltip-btn { background:rgba(255,255,255,.2); border:1px solid rgba(255,255,255,.4); border-radius:50%; width:22px; height:22px; color:#fff; font-size:.8em; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; font-weight:700; }
@@ -1349,7 +1355,18 @@ function pollInyeccionEstado(jobId) {
           status.textContent = '✅ Inyección completada'; status.style.color = '#34a853';
           renderInyeccionResumen(data.resumen);
         } else {
-          status.textContent = '❌ ' + (data.error || 'Error en la inyección'); status.style.color = '#ea4335';
+          // OB-9: desde GP-52 una corrida puede ABORTAR (ej. no se pudo resolver el tag del mes).
+          // El motivo va en un bloque visible, no sólo en la línea de status que se pierde de vista.
+          const motivo = data.error || 'Error en la inyección';
+          status.textContent = '❌ ' + motivo; status.style.color = '#ea4335';
+          document.getElementById('inyResultado').innerHTML =
+            '<div class="alert alert-danger" style="margin-top:12px;">' +
+              '<strong>La inyección se cortó.</strong>' +
+              '<div style="margin-top:6px;" class="iny-err-msg">' + esc(motivo) + '</div>' +
+              '<div style="margin-top:8px;font-size:.92em;">Si el corte fue a mitad de camino, ' +
+              'algunos contactos pueden haber quedado procesados. Revisá el reporte de la corrida ' +
+              'antes de volver a inyectar.</div>' +
+            '</div>';
         }
       }
     } catch (e) {
@@ -1361,6 +1378,30 @@ function pollInyeccionEstado(jobId) {
   };
   tick();
   INY_POLL = setInterval(tick, 5000);
+}
+
+// OB-9: el contador "Con error" solo no alcanza. El 2026-09-03 marcó 527 en rojo y eran 525
+// contactos sin el tag del mes; como el resto del resumen se veía bien, pasó por ruido y la corrida
+// quedó como hecha. El servicio (GP-52) ahora devuelve `erroresTop` = los 5 mensajes más frecuentes
+// con su cantidad. Puede venir vacío o ausente (servicio viejo): los dos casos están contemplados.
+function renderErroresInyeccion(r) {
+  const n = Number(r.conError) || 0;
+  if (!n) return '';
+  const top = Array.isArray(r.erroresTop) ? r.erroresTop.filter(e => e && e.mensaje) : [];
+  const cuantos = n === 1 ? 'el error' : 'los ' + n + ' errores';
+  if (!top.length) {
+    return '<div class="alert alert-warning" style="margin-top:12px;">' +
+      '<strong>' + (n === 1 ? '1 contacto quedó' : n + ' contactos quedaron') + ' con error</strong>, ' +
+      'pero el servicio no devolvió el detalle. Miralo en el reporte de la corrida en S18.</div>';
+  }
+  const filas = top.map(e =>
+    '<li><span class="iny-err-n">' + (Number(e.cantidad) || 0) + '\u00d7</span>' +
+    '<span class="iny-err-msg">' + esc(e.mensaje) + '</span></li>').join('');
+  return '<div class="alert alert-danger" style="margin-top:12px;">' +
+    '<strong>De qué ' + (n === 1 ? 'es ' : 'son ') + cuantos + ':</strong>' +
+    '<ul class="iny-errores">' + filas + '</ul>' +
+    (top.length >= 5 ? '<div style="margin-top:6px;font-size:.92em;">Se listan los 5 tipos más frecuentes.</div>' : '') +
+  '</div>';
 }
 
 function renderInyeccionResumen(r) {
@@ -1375,6 +1416,7 @@ function renderInyeccionResumen(r) {
       ${item('Opt-out (excluidos)', r.optout, 'mv-amber')}
       ${item('Con error', r.conError, 'mv-red')}
     </div>
+    ${renderErroresInyeccion(r)}
     <p style="font-size:.82em;color:var(--text-sec);margin-top:10px;">
       Ahora Yhonny arma el broadcast en ManyChat filtrando por <strong>mes + grupo + V</strong>.
     </p>`;
