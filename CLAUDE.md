@@ -518,6 +518,20 @@ Pantalla para auditar la calidad del teléfono que carga un taller (o un comisio
 6. **Migrar a la fuente única de talleres cuando exista (encargo `CEO-84`)** — hoy `TALLERES_PROPIOS` es una lista fija, y el código de taller de ENARGAS **no es estable** (ver el hallazgo de 2026-08-18 más abajo). Cuando el CEO defina la identidad única de talleres en `cdp_nova`, hay que sacar la lista de `procesar.js` y consumir esa fuente. Hasta entonces la lista es correcta pero frágil: se rompe en silencio si ENARGAS recodifica un taller nuestro.
 7. **`verificar.js` legacy** — no hardcodea talleres: usa `config.talleresPropios` (default del endpoint `/api/config` en server.js, hoy `IRT0550, HIT0797, QUT0856`). Si hay un `data/config.json` guardado en S18 con la lista vieja, **ese archivo pisa el default** — revisarlo tras un cambio de talleres.
 
+### Estado al cierre 2026-09-09 — Incidente septiembre: import defectuoso + limpieza manual en ManyChat
+
+**Qué pasó:** el período `9-2026` se importó antes del fix de cilindros ES-33 (ver sección OB-10 más abajo) y quedó con la PH contaminada. Antes de corregirlo, Yhonny ya había **exportado el ZIP y subido a mano el grupo PH (97 contactos, `ph-9-2026-V1.csv`) directo en ManyChat** — no por el botón "Inyectar a ManyChat" de la app — usando etiquetas propias (`Solo PH`, `Aviso Oblea`, `Septiembre 2026`, `V1`), y disparó el broadcast real. El grupo "obleas" (438 contactos) sí se había inyectado por el botón oficial, pero **sin llegar a broadcastear**.
+
+**Limpieza hecha (fuera de la app, directo en ManyChat vía API):**
+- Los 96 teléfonos únicos de `ph-9-2026-V1.csv` (ya avisados) se marcaron con la etiqueta `Yhonny Revisar` (id `63486628`) — **es el flag permanente de "no reenviar"**, no se saca nunca salvo que Ariel lo pida.
+- Los ~440 contactos de "obleas" se limpiaron de las 16 etiquetas de esa campaña (`Aviso Oblea`, `Nova PH Urgente`, `Nova Obleas`, `Nova PH`, `Solo PH`, `V1`–`V10`, `Septiembre 2026`) para poder reinyectar sin arrastrar tags viejos — confirma en la práctica lo que ya decía la sección OB-10: **el inyector de GP-37 no tiene `removeTag`, solo `addTag`**, así que reinyectar sin limpiar antes deja al contacto con dos V\* o dos categorías a la vez.
+- 2 contactos no existen en ManyChat (sin WhatsApp): FERNANDEZ ANDREA V (PCN418) y MOYANO HORACIO (AH586XT) — no aplica ninguna acción, quedan fuera de cualquier export por `telWhatsappValido`.
+- Con el dato ya corregido se reimportó `9-2026` desde InfoSys y se reinyectó (529 válidos → 515 con tag `Septiembre 2026`, el resto opt-out/error). De esos, **93 de los 96 ya avisados por Yhonny volvieron a entrar** (siguen legítimamente sin renovar) — conservan `Yhonny Revisar`.
+
+**Regla operativa que queda de esto — la inyección NO manda, el broadcast sí:** "Inyectar a ManyChat" solo hace upsert + tags (seguro de correr las veces que haga falta). El riesgo de reenvío está en el **broadcast manual** que arma Yhonny en ManyChat. **Antes de cualquier broadcast de una tanda reinyectada, agregar al filtro de audiencia "NO tiene la etiqueta `Yhonny Revisar`"** — si no, se le repite el aviso a quien ya lo recibió por fuera del flujo oficial.
+
+**Pendiente para el CEO (no lo toco desde acá):** dejar encargo para que `organizacion-gp5` evalúe agregar `removeTag`/limpieza automática al inyector GP-37, y para que quede registrado en algún lado el patrón "subida manual a ManyChat sin pasar por el botón" como algo a evitar — hoy no hay nada que lo impida técnicamente.
+
 ### Estado al cierre 2026-08-18 (OB-8) — Corregido el taller propio mal listado
 
 **Qué estaba mal:** `TALLERES_PROPIOS` listaba `QUT0867` como Grupo P5. Es al revés: `QUT0867` es **CAR EQUIP S.A.S.** (un tercero) y Grupo P5 es **`QUT0856`**. Consecuencia: los listados de obleas y PH "por taller propio" metían adentro 7.221 operaciones de otra empresa y **perdían el taller de Grupo P5 completo**. Solo afecta a 2026 en adelante — `QUT0856` empezó a operar en 12/2025, y ese es justamente el motivo del error: cuando se armó la lista (2026-07), Grupo P5 no aparecía en ningún export porque todavía no existía.
