@@ -414,6 +414,33 @@ Al importar desde InfoSys, cada contacto se clasifica según la **PH más cercan
 - **PH vence = último PH + 5 años** (estándar ENARGAS para cilindros GNC, confirmado con Ariel). Se toma el **más próximo** entre todos los cilindros del vehículo.
 - Helpers: `phVenceDe(cilindros)` (mínimo entre cilindros) y `clasificarVencimiento(obleaVenc, phVence)`. El campo se calcula en el mapeo de `/api/base/importar` y viaja como `_phVence` (ISO) + `_tipoVencimiento` en cada registro (via `mapRegistro`), así queda guardado en el período JSON.
 
+### ⚠️ La clasificación se CONGELA al importar — guardar NO recalcula (verificado 2026-09-08)
+
+`_tipoVencimiento` / `_phVence` se calculan **una sola vez**, en el mapeo de `/api/base/importar`, y quedan escritos dentro de `data/periodos/<MM-YYYY>.json`. Desde ahí son un dato muerto:
+
+- `guardarPeriodo` (lib/storage.js) hace `{...datos}` — **escribe tal cual lo que manda el navegador**. Guardar un período abierto desde "Obleas Guardadas" lo re-escribe con los mismos valores viejos y sube la `version`, así que **un período con `guardadoEn` de hoy puede tener una PH calculada hace semanas**.
+- **La única forma de recalcular es re-importar el mes desde InfoSys** (y volver a guardar).
+- Re-importar **pisa `STATE.registros` entero** → se pierden las correcciones manuales de teléfono (`UTELEFONO_FINAL`) y la verificación en memoria. Contarlas antes: `registros.filter(r => r.UTELEFONO_FINAL !== r.UTELEFONO_SUGERENCIA)`.
+
+**Caso real (OB-10):** `9-2026` se importó antes del fix de cilindros de ES-33 (3/9 19:36) y quedó con la PH contaminada; se re-guardó el 8/9 (v3) y **siguió mostrando lo viejo**. Medido contra la base ya corregida: **122 de 554 contactos con etiqueta equivocada** — 102 `ph_urgente`→`solo_oblea`, 11 `ph_urgente`→`ph`, 9 `ph`→`solo_oblea`. **Las 122 en la misma dirección** (de más urgente a menos): es la firma del bug de cilindros ajenos, porque `phVenceDe` toma el mínimo y un cilindro ajeno más viejo sólo puede adelantar la fecha. Testigo `VSC632`: PH real 02/2028 (2 cilindros propios, CRPC SORV 02/23), guardada 08/2024.
+
+### El ZIP y la inyección NO se separan por el mismo campo
+
+Confundirlos lleva a conclusiones opuestas sobre si algo está afectado por un problema de datos de PH:
+
+| | ZIP (descarga manual) | Inyección a ManyChat / export OB-4 |
+|---|---|---|
+| Campo | `_tipoGestion` — `UCODGEST='X'` | `_tipoVencimiento` — cilindros `CUPH*` |
+| Significa | qué trámite de ENARGAS vence | cuándo vence la prueba hidráulica |
+| ¿Lo toca un problema de cilindros? | **No** | **Sí** |
+| Salida | `obleas/obleas-<per>-N.csv` · `ph/ph-<per>-N.csv` | tags `Nova Obleas` / `Nova PH` / `Nova PH Urgente` |
+
+El ZIP sale de `dividirArchivos` → `tipoGestion(r)` (lib/procesar.js), que sólo mira `UCODGEST`, y sus columnas son `nombre;marca;modelo;patente;telefono` — **no lleva ninguna marca de urgencia**. Septiembre 2026, los mismos 541 contactos: el ZIP los parte en **443 obleas / 98 PH**; la inyección, en **182 ph_urgente / 47 ph / 312 solo_oblea**. Son dos cortes distintos de la misma gente, no dos versiones del mismo corte.
+
+### Corregir un período ya inyectado: el inyector no sabe QUITAR tags
+
+`organizacion-gp5/scripts/inyeccion-obleas-manychat/manychat.js` sólo tiene `addTag` — **no existe `removeTag` en todo el servicio**. Si se corrige un período y se re-inyecta, un contacto que pasó de `Nova PH Urgente` a `Nova Obleas` queda **con las dos etiquetas** (y, si cambió el tamaño de tanda, en dos `V*`) → entra en dos broadcasts. Limpiar los tags viejos es trabajo de `organizacion-gp5` y va **antes** de re-inyectar.
+
 ### Endpoint de consumo (lo lee GP-37/n8n)
 ```
 GET /api/export/manychat?periodo=<id>     (ej. periodo=8-2026)
