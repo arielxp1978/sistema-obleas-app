@@ -518,6 +518,29 @@ Pantalla para auditar la calidad del teléfono que carga un taller (o un comisio
 6. **Migrar a la fuente única de talleres cuando exista (encargo `CEO-84`)** — hoy `TALLERES_PROPIOS` es una lista fija, y el código de taller de ENARGAS **no es estable** (ver el hallazgo de 2026-08-18 más abajo). Cuando el CEO defina la identidad única de talleres en `cdp_nova`, hay que sacar la lista de `procesar.js` y consumir esa fuente. Hasta entonces la lista es correcta pero frágil: se rompe en silencio si ENARGAS recodifica un taller nuestro.
 7. **`verificar.js` legacy** — no hardcodea talleres: usa `config.talleresPropios` (default del endpoint `/api/config` en server.js, hoy `IRT0550, HIT0797, QUT0856`). Si hay un `data/config.json` guardado en S18 con la lista vieja, **ese archivo pisa el default** — revisarlo tras un cambio de talleres.
 
+### Estado al cierre 2026-09-16 — Filtro por grupo de envío en Verificación Post-Envío
+
+Pedido de Ariel: poder analizar la verificación (renovó / no renovó) **cruzada por la etiqueta con la
+que se mandó el ManyChat**, no solo por clasificación ENARGAS. Chequeado con Ariel qué dimensión hacía
+falta (solo grupo de vencimiento, no taller) antes de tocar la UI.
+
+- **Nuevo select "Grupo de envío (etiqueta ManyChat)"** en el tab Verificación (`public/index.html`),
+  poblado con los valores de `_tipoVencimiento` presentes en el período (`ph_urgente` → Nova PH Urgente,
+  `ph` → Nova PH, `solo_oblea` → Nova Obleas, sin dato → "Sin dato de PH (CSV)"). Es el mismo campo que
+  ya usa `/api/export/manychat` (server.js) para armar la etiqueta — **no se llama a ManyChat en vivo**,
+  se lee del propio registro guardado en el período.
+- Al elegir un grupo, **se recalcula todo el panel sobre ese subconjunto**: KPIs, gráfico de torta,
+  selector de clasificación (con sus conteos) y tabla — no es un recorte visual nomás, permite ver p.ej.
+  "de los PH Urgente, cuántos no renovaron". Helper compartido: `filtrarPorTagVerif()`.
+  El botón "Reintentar fallidos" queda **fuera** de este alcance a propósito (opera sobre el total).
+- **CSV** (`exportarVerifCSV`) y **PDF de resumen** (`generarVerifPDF`) exportan el grupo seleccionado
+  (columna `GRUPO_ENVIO` en el CSV; el PDF indica el grupo en el encabezado).
+- Deployado por scp + rebuild, verificado md5 dentro del container + `/login` 200. Probado visualmente
+  por Ariel ("parece que está bien").
+- **Si se necesita también filtrar por taller (Sorvicor/Grupo P5)** — quedó descartado a propósito en
+  esta vuelta, Ariel solo pidió el grupo de vencimiento. El dato (`registro.TCODTAL`) ya está disponible
+  en el mismo `r.registro` si se quiere agregar después; seguiría el mismo patrón (`filtrarPorTagVerif`).
+
 ### Estado al cierre 2026-09-09 — Incidente septiembre: import defectuoso + limpieza manual en ManyChat
 
 **Qué pasó:** el período `9-2026` se importó antes del fix de cilindros ES-33 (ver sección OB-10 más abajo) y quedó con la PH contaminada. Antes de corregirlo, Yhonny ya había **exportado el ZIP y subido a mano el grupo PH (97 contactos, `ph-9-2026-V1.csv`) directo en ManyChat** — no por el botón "Inyectar a ManyChat" de la app — usando etiquetas propias (`Solo PH`, `Aviso Oblea`, `Septiembre 2026`, `V1`), y disparó el broadcast real. El grupo "obleas" (438 contactos) sí se había inyectado por el botón oficial, pero **sin llegar a broadcastear**.

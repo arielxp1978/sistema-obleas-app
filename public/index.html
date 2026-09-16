@@ -393,6 +393,13 @@ input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 2px rg
     </div>
     <div class="flex gap-2 items-center mb-4" style="flex-wrap:wrap;">
       <label style="font-size:.85em;color:var(--text-sec);display:flex;align-items:center;gap:6px;">
+        Grupo de envío (etiqueta ManyChat):
+        <select id="verifFiltroTag" onchange="renderVerifResultados()"
+          style="padding:6px 8px;border:1px solid var(--border);border-radius:8px;font-size:.9em;">
+          <option value="">Todas</option>
+        </select>
+      </label>
+      <label style="font-size:.85em;color:var(--text-sec);display:flex;align-items:center;gap:6px;">
         Filtrar por clasificación:
         <select id="verifFiltroClasif" onchange="renderVerifTabla(this.value)"
           style="padding:6px 8px;border:1px solid var(--border);border-radius:8px;font-size:.9em;">
@@ -1775,17 +1782,53 @@ function telVerif(reg) {
   return (reg && (reg.UTELEFONO_FINAL || reg.UTELEFONO_WHATSAPP || reg.UTELEFONO || reg.UTELEFONO_ORIGINAL)) || '';
 }
 
+// Grupo de envío = mismo campo (_tipoVencimiento) que server.js usa para armar la etiqueta
+// ManyChat al inyectar (ver /api/export/manychat). ph_desconocido = fallback de CSV sin cilindros.
+const VENC_LABELS = {
+  ph_urgente: 'Nova PH Urgente',
+  ph: 'Nova PH',
+  solo_oblea: 'Nova Obleas',
+  ph_desconocido: 'Sin dato de PH (CSV)'
+};
+function tagVerif(r) {
+  return (r.registro && r.registro._tipoVencimiento) || 'ph_desconocido';
+}
+// Alcance por grupo de envío: '' = todas. Compartido entre KPIs, gráfico, tabla y export.
+function filtrarPorTagVerif(lista) {
+  const sel = document.getElementById('verifFiltroTag');
+  const val = sel ? sel.value : '';
+  return val ? lista.filter(r => tagVerif(r) === val) : lista;
+}
+
 function renderVerifResultados() {
   if (!STATE.verificacion) return;
   const panel = document.getElementById('verifResultados');
   panel.classList.remove('hidden');
 
+  // Poblar el selector de grupo de envío, preservando la selección.
+  const selTag = document.getElementById('verifFiltroTag');
+  if (selTag) {
+    const prevTag = selTag.value;
+    const conteoTag = {};
+    STATE.verificacion.forEach(r => { const t = tagVerif(r); conteoTag[t] = (conteoTag[t] || 0) + 1; });
+    let optsTag = `<option value="">Todas (${STATE.verificacion.length})</option>`;
+    Object.entries(conteoTag).sort((a, b) => b[1] - a[1]).forEach(([k, v]) => {
+      optsTag += `<option value="${k}">${VENC_LABELS[k] || k} (${v})</option>`;
+    });
+    selTag.innerHTML = optsTag;
+    selTag.value = conteoTag[prevTag] ? prevTag : '';
+  }
+
+  // A partir de acá, todo (KPIs, gráfico, selector de clasificación y tabla) se calcula
+  // sobre el grupo de envío elegido — no sobre el total del período.
+  const base = filtrarPorTagVerif(STATE.verificacion);
+
   const resumen = {};
-  STATE.verificacion.forEach(r => {
+  base.forEach(r => {
     const c = r.clasificacion.codigo;
     resumen[c] = (resumen[c] || 0) + 1;
   });
-  const total = STATE.verificacion.length || 0;
+  const total = base.length || 0;
 
   const labels = VERIF_LABELS, colors = VERIF_COLORS;
 
@@ -1831,20 +1874,22 @@ function renderVerifResultados() {
   renderVerifTabla(sel ? sel.value : '');
 }
 
-// Renderiza la tabla de resultados, opcionalmente filtrada por código de clasificación.
-// filtro = '' → todos. Incluye columna Teléfono.
+// Renderiza la tabla de resultados, dentro del grupo de envío elegido (verifFiltroTag) y
+// opcionalmente filtrada además por código de clasificación. filtro = '' → todos los del grupo.
 function renderVerifTabla(filtro) {
   const cont = document.getElementById('tablaVerif');
   if (!cont) return;
-  const filas = (STATE.verificacion || []).filter(r => !filtro || r.clasificacion.codigo === filtro);
+  const base = filtrarPorTagVerif(STATE.verificacion || []);
+  const filas = base.filter(r => !filtro || r.clasificacion.codigo === filtro);
   const cnt = document.getElementById('verifFiltroCount');
-  if (cnt) cnt.textContent = filtro ? `${filas.length} de ${STATE.verificacion.length}` : `${filas.length} en total`;
+  if (cnt) cnt.textContent = filtro ? `${filas.length} de ${base.length}` : `${filas.length} en total`;
 
-  let html = '<table><thead><tr><th>Dominio</th><th>Nombre</th><th>Teléfono</th><th>Clasificación</th><th>PEC</th><th>Taller</th><th>Fecha Op.</th><th>Nuevo Vto.</th></tr></thead><tbody>';
+  let html = '<table><thead><tr><th>Dominio</th><th>Nombre</th><th>Teléfono</th><th>Grupo envío</th><th>Clasificación</th><th>PEC</th><th>Taller</th><th>Fecha Op.</th><th>Nuevo Vto.</th></tr></thead><tbody>';
   filas.forEach(r => {
     const c = r.clasificacion;
     const badge = VERIF_BADGES[c.codigo] || 'badge-leve';
-    html += `<tr><td>${esc(r.registro.UDOMINIO)}</td><td>${esc(r.registro.UAPEYNOM)}</td><td>${esc(telVerif(r.registro))}</td><td><span class="badge ${badge}">${esc(c.texto)}</span></td><td>${esc(c.pecNombre)}</td><td>${esc(c.tallerNombre)}</td><td>${esc(c.fechaOp)}</td><td>${esc(c.nuevoVto)}</td></tr>`;
+    const tag = VENC_LABELS[tagVerif(r)] || tagVerif(r);
+    html += `<tr><td>${esc(r.registro.UDOMINIO)}</td><td>${esc(r.registro.UAPEYNOM)}</td><td>${esc(telVerif(r.registro))}</td><td>${esc(tag)}</td><td><span class="badge ${badge}">${esc(c.texto)}</span></td><td>${esc(c.pecNombre)}</td><td>${esc(c.tallerNombre)}</td><td>${esc(c.fechaOp)}</td><td>${esc(c.nuevoVto)}</td></tr>`;
   });
   html += '</tbody></table>';
   if (!filas.length) html = '<p style="color:var(--text-sec);padding:8px;">No hay registros con esa clasificación.</p>';
@@ -1862,10 +1907,14 @@ function generarVerifPDF() {
   const meses = ['','Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
   const mesNombre = meses[parseInt(mes)] || mes;
   const titulo = `Verificación Post-Envío ${mesNombre} ${anio}`;
+  const selTag = document.getElementById('verifFiltroTag');
+  const tagVal = selTag ? selTag.value : '';
+  const tagTexto = tagVal ? (VENC_LABELS[tagVal] || tagVal) : 'Todas';
 
+  const base = filtrarPorTagVerif(STATE.verificacion);
   const resumen = {};
-  STATE.verificacion.forEach(r => { const c = r.clasificacion.codigo; resumen[c] = (resumen[c] || 0) + 1; });
-  const total = STATE.verificacion.length;
+  base.forEach(r => { const c = r.clasificacion.codigo; resumen[c] = (resumen[c] || 0) + 1; });
+  const total = base.length;
 
   // Header
   doc.setFontSize(18); doc.setTextColor(26, 115, 232); doc.text('Nova GNC', 14, 20);
@@ -1873,7 +1922,8 @@ function generarVerifPDF() {
   doc.setFontSize(9); doc.setTextColor(95, 99, 104);
   doc.text(`Generado: ${new Date().toLocaleString('es-AR')}`, 14, 36);
   doc.setFontSize(11); doc.setTextColor(32, 33, 36);
-  doc.text(`Total verificado: ${total}`, 14, 45);
+  doc.text(`Grupo de envío: ${tagTexto}`, 14, 45);
+  doc.text(`Total verificado: ${total}`, 14, 52);
 
   // Orden fijo para la hoja (los presentes; los desconocidos al final)
   const orden = ['NUESTRO_PEC_NUESTRO_TALLER','NUESTRO_PEC_OTRO_TALLER','OTRO_PEC','NO_RENOVO','SIN_REGISTRO_GNC','SIN_GNC','BAJA_GNC','FORMATO_INVALIDO','ERROR_TECNICO','PROCESANDO','PENDIENTE'];
@@ -1882,7 +1932,7 @@ function generarVerifPDF() {
     .sort((a, b) => idx(a[0]) - idx(b[0]))
     .map(([k, v]) => [VERIF_LABELS[k] || k, String(v), (total > 0 ? Math.round(v / total * 1000) / 10 : 0) + '%']);
   doc.autoTable({
-    startY: 50,
+    startY: 57,
     head: [['Clasificación', 'Cantidad', '%']],
     body,
     theme: 'striped', headStyles: { fillColor: [26, 115, 232] }
@@ -1972,13 +2022,16 @@ async function reintentarFallidos() {
   } catch (e) { alert('Error: ' + e.message); }
 }
 
+// Exporta el grupo de envío elegido en el filtro (o todo, si está en "Todas").
 function exportarVerifCSV() {
   if (!STATE.verificacion) return;
-  const header = 'DOMINIO;NOMBRE;TELEFONO;CLASIFICACION;PEC;TALLER;TALLER_COD;PEC_COD;FECHA_OP;NUEVO_VTO';
+  const base = filtrarPorTagVerif(STATE.verificacion);
+  const header = 'DOMINIO;NOMBRE;TELEFONO;GRUPO_ENVIO;CLASIFICACION;PEC;TALLER;TALLER_COD;PEC_COD;FECHA_OP;NUEVO_VTO';
   const limpio = v => String(v == null ? '' : v).replace(/[;\n\r]+/g, ' ').trim();
-  const lines = STATE.verificacion.map(r => {
+  const lines = base.map(r => {
     const c = r.clasificacion;
-    return [r.registro.UDOMINIO, r.registro.UAPEYNOM, telVerif(r.registro), c.texto, c.pecNombre, c.tallerNombre, c.tallerCodigo, c.pecCodigo, c.fechaOp, c.nuevoVto].map(limpio).join(';');
+    const tag = VENC_LABELS[tagVerif(r)] || tagVerif(r);
+    return [r.registro.UDOMINIO, r.registro.UAPEYNOM, telVerif(r.registro), tag, c.texto, c.pecNombre, c.tallerNombre, c.tallerCodigo, c.pecCodigo, c.fechaOp, c.nuevoVto].map(limpio).join(';');
   });
   const blob = new Blob([header + '\n' + lines.join('\n')], { type: 'text/csv' });
   const url = URL.createObjectURL(blob);
