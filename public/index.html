@@ -480,7 +480,7 @@ input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 2px rg
 // AUTH HELPERS
 // ============================================================
 function getToken() {
-  const m = document.cookie.match(/token=([a-f0-9]{64})/);
+  const m = document.cookie.match(/(?:^|;\s*)ob_sesion=([a-f0-9]{64})/);
   return m ? m[1] : null;
 }
 
@@ -502,7 +502,7 @@ async function authFetch(url, opts = {}) {
 
 function cerrarSesion() {
   authFetch('/api/logout', { method: 'POST' }).then(() => {
-    document.cookie = 'token=; Max-Age=0; path=/';
+    document.cookie = 'ob_sesion=; Max-Age=0; path=/'; // OB-11: nunca tocar 'token' (es del panel)
     window.location.href = '/login';
   });
 }

@@ -185,7 +185,7 @@ tr.total-row td { font-weight:700; border-top:2px solid var(--border); }
 
 <script>
 function getToken() {
-  const m = document.cookie.match(/token=([a-f0-9]{64})/);
+  const m = document.cookie.match(/(?:^|;\s*)ob_sesion=([a-f0-9]{64})/);
   return m ? m[1] : null;
 }
 async function authFetch(url, opts = {}) {

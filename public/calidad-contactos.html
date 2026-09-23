@@ -164,7 +164,7 @@ input:focus, select:focus { outline:none; border-color:var(--primary); box-shado
 
 <script>
 function getToken() {
-  const m = document.cookie.match(/token=([a-f0-9]{64})/);
+  const m = document.cookie.match(/(?:^|;\s*)ob_sesion=([a-f0-9]{64})/);
   return m ? m[1] : null;
 }
 async function authFetch(url, opts = {}) {

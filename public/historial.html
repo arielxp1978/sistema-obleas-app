@@ -52,7 +52,7 @@ tr:hover { background:#f8f9fa; }
 </div>
 
 <script>
-function getToken() { const m = document.cookie.match(/token=([a-f0-9]{64})/); return m ? m[1] : null; }
+function getToken() { const m = document.cookie.match(/(?:^|;\s*)ob_sesion=([a-f0-9]{64})/); return m ? m[1] : null; }
 async function authFetch(url, opts = {}) {
   if (!opts.headers) opts.headers = {};
   const t = getToken(); if (t) opts.headers['Authorization'] = 'Bearer ' + t;

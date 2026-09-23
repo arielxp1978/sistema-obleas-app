@@ -317,7 +317,8 @@ app.get('/auth/google/callback', async (req, res) => {
     console.log('[OAuth callback] sesión creada para:', googleUser.email, '| token:', token.slice(0,8) + '...');
     const usuarioJson = JSON.stringify({ nombre, email: googleUser.email, metodo: 'google' });
 
-    res.setHeader('Set-Cookie', 'token=' + token + '; Path=/; Max-Age=86400; SameSite=Lax');
+    // OB-11: cookie con nombre propio. 'token' es la del panel (mismo host 192.168.0.18, las cookies no distinguen puerto).
+    res.setHeader('Set-Cookie', 'ob_sesion=' + token + '; Path=/; Max-Age=86400; SameSite=Lax');
     res.send('<!DOCTYPE html><html><body><script>'
       + 'localStorage.setItem("token","' + token + '");'
       + 'localStorage.setItem("usuario",' + JSON.stringify(usuarioJson) + ');'
@@ -355,7 +356,7 @@ function extraerToken(req) {
   const auth = req.headers.authorization;
   if (auth && auth.startsWith('Bearer ')) return auth.slice(7);
   const cookies = req.headers.cookie || '';
-  const match = cookies.match(/token=([a-f0-9]{64})/);
+  const match = cookies.match(/(?:^|;\s*)ob_sesion=([a-f0-9]{64})/);
   return match ? match[1] : null;
 }
 
