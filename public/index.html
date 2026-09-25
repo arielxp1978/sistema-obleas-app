@@ -10,6 +10,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<script src="/js/clasificar-lote.js"></script>
 <style>
 :root {
   --primary: #1a73e8; --primary-dark: #1557b0; --success: #34a853;
@@ -372,6 +373,7 @@ input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 2px rg
       <button class="btn hidden" id="btnCancelarVerif" onclick="cancelarVerificacion()" style="background:rgba(234,67,53,.2);border-color:rgba(234,67,53,.5);color:#ea4335;">✕ Cancelar</button>
       <span id="verifStatus" style="font-size:.9em;color:var(--text-sec);"></span>
     </div>
+    <div id="verifAutoInfo" class="mb-4" style="display:none;font-size:.88em;line-height:1.45;padding:10px 14px;border-radius:8px;background:#eef4ff;border:1px solid #c9dafc;color:#1f3b73;"></div>
     <div class="progress-bar mb-4" id="verifProgress" style="display:none;">
       <div class="fill" id="verifProgressFill"></div>
     </div>
@@ -573,6 +575,7 @@ document.querySelectorAll('.tab').forEach(t => {
     t.classList.add('active');
     document.getElementById('tc-' + t.dataset.tab).classList.add('active');
     if (t.dataset.tab === 'archivos') chequearServicioInyeccion();
+    if (t.dataset.tab === 'verificacion') abrirVerificacionPorDefecto();
   });
 });
 
@@ -1602,39 +1605,8 @@ function agregarLogVerif(tipo, msg) {
   logBox.scrollTop = logBox.scrollHeight;
 }
 
-function clasificarItemLote(item, config) {
-  const base = { pecNombre: '-', tallerNombre: '-', tallerCodigo: '-', pecCodigo: '-', fechaOp: '-', nuevoVto: '-' };
-  if (item.status === 'pendiente') return { codigo: 'PENDIENTE', texto: 'Verificando...', ...base };
-  // status:error = S14 no pudo procesar (cruce de datos, timeout, etc.)
-  if (item.status === 'error') return { codigo: 'ERROR_TECNICO', texto: item.error || 'Error técnico', ...base };
-  const r = item.resultado;
-  if (!r) return { codigo: 'NO_RENOVO', texto: 'No Renovó', ...base };
-  // resultado.error: "0"=ok, "2"=sin GNC, "4"=procesando, "8"=baja
-  if (String(r.error) === '2' || r.estado === 'not_found') return { codigo: 'NO_RENOVO', texto: 'No Renovó', ...base };
-  if (String(r.error) === '4') return { codigo: 'PROCESANDO', texto: 'Procesando...', ...base };
-  if (String(r.error) === '8') return { codigo: 'BAJA_GNC', texto: 'Dado de baja / Desmontaje', ...base };
-  if (String(r.error) !== '0') return { codigo: 'NO_RENOVO', texto: 'No Renovó', ...base };
-  // error=0 → tiene GNC vigente. Campos en resultado.data (formato ENARGAS estándar)
-  const data = r.data || {};
-  const datosPEC = data.datosPEC || {};
-  const datosTaller = data.datosTaller || {};
-  const datosOp = data.datosOperacion || {};
-  const pec = String(datosPEC.codigo || '');
-  const taller = String(datosTaller.codigo || '');
-  const enriquecido = {
-    pecCodigo: pec, pecNombre: datosPEC.razonSocial || pec || '-',
-    tallerCodigo: taller, tallerNombre: datosTaller.razonSocial || taller || '-',
-    fechaOp: datosOp.fechaHabilitacion ? datosOp.fechaHabilitacion.split('T')[0] : '-',
-    nuevoVto: datosOp.fechaVencimiento ? datosOp.fechaVencimiento.split('T')[0] : '-'
-  };
-  const pecPropios = config.pecPropios || ['3145', '3286'];
-  const talleresPropios = config.talleresPropios || ['IRT0550', 'HIT0797', 'QUT0856'];
-  if (pecPropios.includes(pec) && talleresPropios.includes(taller))
-    return { codigo: 'NUESTRO_PEC_NUESTRO_TALLER', texto: 'Nuestro PEC + Nuestro Taller', ...enriquecido };
-  if (pecPropios.includes(pec))
-    return { codigo: 'NUESTRO_PEC_OTRO_TALLER', texto: 'Nuestro PEC + Taller Externo', ...enriquecido };
-  return { codigo: 'OTRO_PEC', texto: 'Otro PEC', ...enriquecido };
-}
+// clasificarItemLote(item, config) vive en lib/clasificar-lote.js (servido en /js/clasificar-lote.js):
+// fuente única compartida con la actualización automática del servidor.
 
 // Deriva el jobId (slug) desde el nombre del período, igual que dalegas.
 function slugifyJob(s) {
@@ -1648,6 +1620,79 @@ function nuevoSufijoJob() {
   const d = new Date();
   const p = n => String(n).padStart(2, '0');
   return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`;
+}
+
+// ============================================================
+// VERIFICACIÓN AUTOMÁTICA — la pestaña abre sola el último reporte
+// El server repite la verificación a las 07:45 y 12:00 hasta el día 20 del mes siguiente
+// (lib/verificacion-auto.js). Acá solo se muestra.
+// ============================================================
+function fmtFechaCorta(iso) {
+  if (!iso) return '-';
+  const [a, m, d] = iso.slice(0, 10).split('-');
+  return `${d}/${m}/${a}`;
+}
+function fmtFechaHora(iso) {
+  if (!iso) return '-';
+  return new Date(iso).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+
+async function abrirVerificacionPorDefecto() {
+  // Si hay una verificación corriendo en pantalla, no se toca nada.
+  if (document.getElementById('btnIniciarVerif').disabled) return;
+  let info;
+  try {
+    const resp = await authFetch('/api/verificacion-auto');
+    if (!resp || !resp.ok) return;
+    info = await resp.json();
+  } catch { return; }
+
+  if (!STATE.periodo) {
+    // Nada abierto → abrir el último reporte guardado.
+    if (info.ultimoReporte) await cargarPeriodo(info.ultimoReporte, { irA: 'verificacion' });
+  } else {
+    // Ya hay un período abierto (quizás con cambios sin guardar): solo se refresca su
+    // verificación si en el disco hay una automática más nueva. Una verificación corrida a
+    // mano y todavía sin guardar (sin _verifAutoEn) no se pisa.
+    const p = (info.periodos || []).find(x => x.periodoId === STATE.periodo);
+    const manualSinGuardar = STATE.verificacion && !STATE._verifAutoEn;
+    if (p && p.conVerificacion && !manualSinGuardar) {
+      try {
+        const resp = await authFetch(`/api/periodos/${encodeURIComponent(STATE.periodo)}`);
+        const data = resp && resp.ok ? await resp.json() : null;
+        const v = data && data.verificacion;
+        if (v && v.detalle && (!STATE.verificacion || (v.actualizadoEn && v.actualizadoEn > (STATE._verifAutoEn || '')))) {
+          STATE.verificacion = v.detalle;
+          STATE._verifAutoEn = v.actualizadoEn || null;
+          renderVerifResultados();
+        }
+      } catch {}
+    }
+  }
+  renderVerifAutoInfo(info);
+}
+
+function renderVerifAutoInfo(info) {
+  const box = document.getElementById('verifAutoInfo');
+  if (!box) return;
+  const p = (info.periodos || []).find(x => x.periodoId === STATE.periodo);
+  if (!STATE.periodo || !p) {
+    box.style.display = 'block';
+    box.innerHTML = 'Todavía no hay un reporte guardado. Cargá un período, corré la verificación y apretá 💾 Guardar: desde ahí se actualiza solo.';
+    return;
+  }
+  const horarios = (info.horarios || []).join(' y ');
+  const hasta = fmtFechaCorta(p.seActualizaHasta);
+  let linea1 = `<strong>${p.nombre}</strong>`;
+  if (STATE._verifAutoEn) linea1 += ` · actualizado automáticamente el ${fmtFechaHora(STATE._verifAutoEn)}`;
+  else if (STATE.verificacion) linea1 += ' · verificación corrida a mano';
+  let linea2;
+  if (!p.abierta) linea2 = `Reporte cerrado: se actualizó hasta el ${hasta} y ya no cambia.`;
+  else if (!p.conVerificacion) linea2 = `Cuando guardes la verificación con 💾, se va a actualizar sola todos los días a las ${horarios} hasta el ${hasta}.`;
+  else linea2 = `Se actualiza solo todos los días a las ${horarios} hasta el ${hasta}. Con ▶ Iniciar Verificación lo revisás en este momento.`;
+  if (p.ultimaCorrida && !p.ultimaCorrida.ok) linea2 += `<br>⚠️ La última actualización automática falló (${fmtFechaHora(p.ultimaCorrida.en)}): ${p.ultimaCorrida.msg || ''}. Se reintenta en el próximo horario.`;
+  box.style.display = 'block';
+  box.innerHTML = `${linea1}<br>${linea2}`;
 }
 
 // Adjunta a un job de verificación ya existente y muestra sus resultados SIN re-analizar.
@@ -1688,6 +1733,7 @@ async function pollLote(jobId, totalExpected) {
     document.getElementById('verifStatus').textContent = `${resueltos}/${total} (${pct}%)`;
 
     const regMap = STATE._verifRegMap || {};
+    STATE._verifAutoEn = null;  // lo que se ve ahora viene de esta corrida, no de la automática
     STATE.verificacion = resultados.map(item => ({
       registro: regMap[item.patente] || { UDOMINIO: item.patente, UAPEYNOM: '-' },
       clasificacion: clasificarItemLote(item, STATE.config)
@@ -2140,7 +2186,8 @@ async function guardarPeriodo() {
     objetivoRenovaciones: STATE.objetivoRenovaciones || 0,
     verificacion: STATE.verificacion ? {
       resumen: {},
-      detalle: STATE.verificacion
+      detalle: STATE.verificacion,
+      ...(STATE._verifAutoEn ? { actualizadoEn: STATE._verifAutoEn, origen: 'auto' } : {})
     } : null
   };
 
@@ -2210,7 +2257,7 @@ async function eliminarPeriodo(id) {
   } catch (e) { alert('Error al borrar: ' + e.message); }
 }
 
-async function cargarPeriodo(id) {
+async function cargarPeriodo(id, opts = {}) {
   try {
     const resp = await authFetch(`/api/periodos/${id}`);
     const data = await resp.json();
@@ -2224,6 +2271,7 @@ async function cargarPeriodo(id) {
     STATE.totalOriginal = data.totalOriginal;
     STATE.totalFiltrado = data.totalFiltrado;
     STATE.verificacion = data.verificacion?.detalle || null;
+    STATE._verifAutoEn = data.verificacion?.actualizadoEn || null;
     setObjetivoRenov(data.objetivoRenovaciones || 0);
 
     document.getElementById('btnGuardar').classList.remove('hidden');
@@ -2237,7 +2285,7 @@ async function cargarPeriodo(id) {
     if (STATE.registros.length) regenerarArchivos();
 
     if (STATE.verificacion) renderVerifResultados();
-    switchTab('original');
+    switchTab(opts.irA || 'original');
   } catch (e) { alert('Error cargando período: ' + e.message); }
 }
 

@@ -16,6 +16,7 @@ function decodeCsv(buf) {
 }
 const { clasificarPatente, consultarPatente } = require('./lib/verificar');
 const { guardarPeriodo, leerPeriodo, listarPeriodos, eliminarPeriodo, generarHistorial } = require('./lib/storage');
+const verificacionAuto = require('./lib/verificacion-auto');
 
 const app = express();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
@@ -988,12 +989,69 @@ app.get('/api/inyeccion/estado/:jobId', async (req, res) => {
 });
 
 // ============================================================
+// VERIFICACIÓN AUTOMÁTICA (07:45 y 12:00 ART, hasta el día 20 del mes siguiente)
+// Lógica en lib/verificacion-auto.js. Clasificador compartido con el navegador.
+// ============================================================
+const verifAuto = verificacionAuto.crear({
+  dalegasUrl: DALEGAS_API_URL,
+  dalegasKey: DALEGAS_API_KEY,
+  leerConfig: () => {
+    try { if (fs.existsSync(CONFIG_PATH)) return JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8')); } catch {}
+    return { pecPropios: ['3145', '3286'], talleresPropios: [...TALLERES_PROPIOS] };
+  },
+  notificar: (mensaje) => fetch(COMUNICACIONES_HUB_URL, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tipo: 'nova-tecnico', mensaje }),
+    signal: AbortSignal.timeout(10000)
+  }).catch(e => console.error('[verif-auto] no se pudo notificar:', e.message))
+});
+
+// El clasificador es el mismo archivo en el server y en el navegador (fuente única).
+app.get('/js/clasificar-lote.js', (req, res) => {
+  res.type('application/javascript').sendFile(path.join(__dirname, 'lib', 'clasificar-lote.js'));
+});
+
+// Estado de la actualización automática + qué período abre la pantalla por defecto.
+app.get('/api/verificacion-auto', (req, res) => {
+  res.json(verifAuto.info());
+});
+
+// Correr ya la actualización de un período (o de todos los elegibles si no se indica).
+// No espera: responde enseguida y la corrida sigue en el server.
+app.post('/api/verificacion-auto/correr', (req, res) => {
+  const { periodoId } = req.body || {};
+  const info = verifAuto.info();
+  if (info.corriendo) return res.status(409).json({ ok: false, error: 'Ya hay una actualización corriendo' });
+  let ids;
+  if (periodoId) {
+    const p = info.periodos.find(x => x.periodoId === periodoId);
+    if (!p) return res.status(404).json({ ok: false, error: 'Período no encontrado' });
+    if (!p.abierta) return res.status(400).json({ ok: false, error: `El período se actualizaba hasta el ${p.seActualizaHasta}` });
+    ids = [periodoId];
+  } else {
+    ids = info.periodos.filter(x => x.abierta && x.conVerificacion).map(x => x.periodoId);
+  }
+  if (!ids.length) return res.json({ ok: true, periodos: [] });
+  verifAuto.correr(ids, `manual (${(req.sesion && req.sesion.email) || 'usuario'})`);
+  res.json({ ok: true, periodos: ids });
+});
+
+// ============================================================
 // PERSISTENCIA DE PERIODOS
 // ============================================================
 
 app.post('/api/periodos', (req, res) => {
   try {
     const data = req.body;
+    // Si la pantalla manda una verificación automática más vieja que la del disco (la cargó
+    // antes de la corrida de las 12, por ej.), se conserva la del disco. Una verificación
+    // corrida a mano no trae actualizadoEn y siempre se guarda tal cual.
+    const enDisco = leerPeriodo(data.periodoId);
+    const vDisco = enDisco && enDisco.verificacion;
+    const vNueva = data.verificacion;
+    if (vDisco && vDisco.actualizadoEn && vNueva && vNueva.actualizadoEn && vNueva.actualizadoEn < vDisco.actualizadoEn) {
+      data.verificacion = vDisco;
+    }
     const saved = guardarPeriodo(data.periodoId, data);
     res.json({ ok: true, periodo: saved });
   } catch (e) {
@@ -1090,4 +1148,5 @@ app.listen(PORT, () => {
   console.log(`\n  Sistema de Obleas GNC - Nova GNC`);
   console.log(`  Corriendo en http://localhost:${PORT}`);
   console.log(`  Acceso: Google OAuth + autorización del panel (panel.acceso_app, sección 'obleas')\n`);
+  verifAuto.iniciar();
 });

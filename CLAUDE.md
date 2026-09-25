@@ -236,6 +236,45 @@ La causa raíz se arregló en dalegas (`api.dalegas.com.ar`, VPS:5000), dueño =
 - **`DELETE /api/lote/:jobId`**: ahora existe (devuelve 200; antes 405). Permite borrar/destrabar un job manualmente con la API key.
 - El escape-hatch de la app queda igual como defensa en profundidad, aunque el backend ya no debería trabar jobs.
 
+## Verificación automática (2026-09-25)
+
+La Verificación Post-Envío se **actualiza sola** y la pestaña **abre sola el último reporte**. Pedido de Ariel:
+*"septiembre lo revisamos hasta el 20 de octubre"*.
+
+- **Horarios:** todos los días a las **07:45 y 12:00 ART**. 07:45 (no 07:00) porque el import de InfoSys a
+  `nova_operaciones` entra a las 07:30 y así la primera corrida ya ve las renovaciones de Nova del día anterior.
+- **Ventana:** un período `M-YYYY` se actualiza desde el día 1 de su mes **hasta el día 20 del mes siguiente**
+  inclusive (9-2026 → hasta el 20/10/2026). Después queda fijo.
+- **Solo períodos con una verificación ya guardada** (alguien la corrió y apretó 💾 una vez). Así no se tocan
+  archivos de prueba ni períodos a medio armar. Meses futuros tampoco entran aunque tengan verificación.
+- **Cómo repite:** igual que "re-analizar" → `DELETE` + `POST /api/lote` con `force:false` en dalegas. Casi todo
+  sale de `enargas_data` (ES-21), a S14 va solo lo que falta. Septiembre: 554 patentes en 15 s.
+  Si hay un job del período corriendo a mano, esa corrida se saltea.
+- **Por qué repetir sirve:** el scanner de Enargas Scrap descubre cada oblea nueva emitida en el país (~25.000 por
+  día), no consulta patente por patente. Que una patente tenga su último scan en mayo **no** significa dato viejo:
+  si hubiera renovado en cualquier PEC, la oblea nueva aparecería. dalegas solo afirma "No renovó" con las dos
+  fuentes al día (`_lote_frescura_base`); si no, va a S14 en vivo.
+- **Dónde se guarda:** en el mismo `data/periodos/<id>.json` → `verificacion = {resumen, detalle, actualizadoEn,
+  origen:'auto'}`, vía `actualizarVerificacion()` de `lib/storage.js` (escritura atómica, **no** cambia
+  `guardadoEn` ni `version`: esos dicen cuándo guardó una persona). Estado del programador en
+  `data/verificacion-auto.json` (último horario corrido, resultado por período).
+- **Si falla:** aviso a `nova-tecnico` y se reintenta en el próximo horario. El reporte queda como estaba.
+- **Pantalla:** al abrir la pestaña, si no hay período abierto carga el último reporte (el mes más reciente ya
+  empezado con verificación guardada). Si ya hay uno abierto, solo le refresca la verificación si la del disco es
+  más nueva, **sin** recargar el período (no se pierden cambios de teléfonos sin guardar). Una verificación corrida
+  a mano y sin guardar no se pisa. Franja azul arriba: cuándo se actualizó y hasta cuándo sigue.
+  "▶ Iniciar Verificación" sigue igual para revisarlo en el momento.
+- **Guardar no pisa una automática más nueva:** `POST /api/periodos` conserva la del disco si la que manda la
+  pantalla trae un `actualizadoEn` más viejo (la pantalla se cargó antes de la corrida de las 12).
+- **Clasificador = fuente única:** `lib/clasificar-lote.js` lo usan el server y el navegador (servido en
+  `/js/clasificar-lote.js`). No volver a copiarlo inline en `index.html`.
+- **Endpoints (con sesión):** `GET /api/verificacion-auto` (estado + `ultimoReporte`),
+  `POST /api/verificacion-auto/correr` `{periodoId?}` (corre ya, no espera).
+- **Ojo, cada rebuild cierra todas las sesiones** (viven en memoria): el operador tiene que volver a entrar.
+- **Archivo de prueba `10-2026.json`** (guardado 13/05, 44 registros de oct/nov/dic, 13 verificados): desde el
+  1/10 sería el "último reporte" hasta que se importe y guarde el octubre real, que lo pisa (mismo id). Conviene
+  borrarlo con 🗑️ en Obleas Guardadas antes del 1/10.
+
 ## Clasificación en el frontend (clasificarItemLote)
 
 ```
