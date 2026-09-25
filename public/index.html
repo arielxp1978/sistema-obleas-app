@@ -1878,8 +1878,8 @@ function renderVerifResultados() {
 
   const labels = VERIF_LABELS, colors = VERIF_COLORS;
 
-  // KPIs con cantidad + % del total verificado.
-  let metricsHtml = '';
+  // KPIs con cantidad + % del total verificado. El primero es el total del grupo que se está viendo.
+  let metricsHtml = `<div class="metric-card"><div class="value" style="color:var(--text)">${total}</div><div class="label">Total</div><div style="font-size:.85em;font-weight:600;color:var(--text-sec);margin-top:2px;">100%</div></div>`;
   Object.entries(resumen).forEach(([k, v]) => {
     const pct = total > 0 ? (Math.round(v / total * 1000) / 10) : 0;
     metricsHtml += `<div class="metric-card"><div class="value" style="color:${colors[k] || '#333'}">${v}</div><div class="label">${labels[k] || k}</div><div style="font-size:.85em;font-weight:600;color:var(--text-sec);margin-top:2px;">${pct}%</div></div>`;
