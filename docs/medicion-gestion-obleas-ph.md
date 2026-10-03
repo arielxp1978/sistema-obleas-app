@@ -101,8 +101,47 @@ en ago-sep 2025 (2.759 vehículos) y dónde tienen la oblea nueva.
 - Datos disponibles para profundizar: ubicación del cliente (`nova_operaciones.latitud/longitud`) y de todos
   los talleres (`talleres_geo`, 1.677) → se puede medir si el taller nuevo le queda más cerca que el nuestro.
 
-## 6. Dudas para confirmar con Ariel
+## 6. Respuestas y pedidos nuevos de Ariel (2026-10-03, segunda tanda)
 
-1. ¿Qué pasa los días **10 y 26**? (¿cortes de seguimiento, reenvío, revisión con los asesores?)
-2. ¿Las llamadas de PH las hacen desde la central (internos) o desde el celular? Si es celular, el CDR no las ve.
-3. ¿El experimento "obleas a principio de mes, PH a mitad" arranca con octubre o con noviembre?
+**Por qué existe el broadcast — la ventana del 10 al 26:** el negocio **explota a fin de mes y en los primeros
+5 días hábiles**, porque el usuario se entera en la estación de que no le cargan y sale a buscar taller. Entre el
+**10 y el 26** la actividad de obleas y PH cae. El broadcast busca que vengan en esa ventana: **aplanar la curva**
+y retener clientes. Por eso la gestión (agenda del asesor) tiene que arrancar a comienzo de mes.
+
+**Calendario ya en marcha:** se trabaja con el mes de vencimiento. Octubre = obleas que vencen en octubre:
+durante el mes todavía pueden cargar; desde el 1/11 la estación no debería cargarles. (La "prueba" de la versión
+anterior de este doc era un malentendido: ya se está haciendo así, arranca con octubre.)
+
+**Las llamadas se hacen desde la central** → el CDR de Issabel las puede contar.
+
+**Motivos de las llamadas: por ahora A MANO.** Ariel: *"que los chicos hablen y lo anoten a mano por ahora, más
+adelante vemos de poner todo en el sistema… ahora no lo quiero complicar"*. **No se construye carga de motivos
+en ningún sistema** hasta que Ariel lo pida. (Las categorías de la sección 3 sirven como planilla para anotar.)
+
+**Indicadores nuevos pedidos:**
+1. **PH del mes pasado que no se hicieron.** Hipótesis: el cliente estira el gasto lo más posible, espera a que la
+   estación no le cargue y recién ahí busca dónde hacer la PH. Medirlo: de los PH del mes M, cuántos siguen sin
+   hacer en M+1, M+2…
+2. **Clientes del interior / otras provincias** (Catamarca, La Rioja…) que aprovechan el viaje a Córdoba. Medir
+   cuántos son y si vuelven con nosotros. → **Primera versión HECHA** en el bloque "¿A dónde se fueron?" (tabla
+   "Clientes de otras provincias", por provincia del domicilio en el CSV).
+3. **Acumulado del año de vehículos que nunca renuevan.** No es lo mismo demorar meses que no renovar nunca.
+   Causas posibles: baja no declarada a ENARGAS, oblea trucha (la estación no la distingue y no queda registro),
+   equipo de GNC sacado sin informar, y otras desconocidas. Necesita juntar todos los meses del año → va al
+   tablero mensual (segunda parte), no al reporte de un mes.
+
+**Segundo tablero (balance captados/perdidos + tendencia 12 meses + acumulado de no renovados):** dónde vive lo
+define el CEO (CEO-202).
+
+## 7. Hecho el 2026-10-03
+
+- Filtro "Todas las PH (Urgente + PH)" en la Verificación Post-Envío (commit `4a2cc7c`).
+- Bloque **"¿A dónde se fueron?"** en la Verificación Post-Envío (pantalla, CSV y página 2 del PDF): destino de
+  los "Otro PEC" (Córdoba capital / interior / otra provincia), cuántos renovaron en su misma localidad, top 10
+  talleres y PEC que se los llevaron, y clientes de otras provincias. Respeta el filtro de grupo de envío.
+  Septiembre 2026: 59 perdidos → 31 capital, 24 interior, 4 otra provincia; 25 en su misma localidad.
+
+## 8. Dudas para confirmar con Ariel
+
+Respondidas las tres de la versión anterior (ver sección 6). Abierta:
+1. ¿Dónde se guarda lo que los asesores anotan a mano, para poder contarlo al cierre del mes?

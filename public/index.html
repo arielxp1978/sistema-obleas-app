@@ -385,6 +385,7 @@ input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 2px rg
     <div class="charts-row mb-4">
       <div class="card"><canvas id="chartVerif"></canvas></div>
     </div>
+    <div id="verifFuga" class="mb-4"></div>
     <div class="flex gap-2 mb-4" style="flex-wrap:wrap;">
       <button class="btn btn-success" onclick="exportarVerifCSV()">📥 Exportar CSV</button>
       <button class="btn btn-primary" onclick="generarVerifPDF()">📄 Descargar PDF (resumen)</button>
@@ -1931,6 +1932,112 @@ function renderVerifResultados() {
   });
 
   renderVerifTabla(sel ? sel.value : '');
+  renderVerifFuga(base);
+}
+
+// ── ¿A dónde se fueron? ──
+// Perdidos = "Otro PEC" (renovaron fuera de nuestra red). Se mira dónde está el taller nuevo
+// (datosTaller.localidad/provincia de ENARGAS) y de dónde es el cliente (ULOCALIDAD/UPROVINCIA del CSV).
+function normLugar(s) {
+  return String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+    .replace(/\bcapital\b/g, '').replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+function destinoFuga(c) {
+  const prov = normLugar(c.tallerProvincia), loc = normLugar(c.tallerLocalidad);
+  if (!prov && !loc) return 'sin_dato';
+  if (prov && prov !== 'cordoba') return 'otra_provincia';
+  return loc === 'cordoba' ? 'cordoba_capital' : 'interior_cordoba';
+}
+const FUGA_LABELS = {
+  cordoba_capital: 'Córdoba capital',
+  interior_cordoba: 'Interior de Córdoba',
+  otra_provincia: 'Otra provincia',
+  sin_dato: 'Sin dato de localidad'
+};
+const RENOVO_CON_NOSOTROS = ['NUESTRO_PEC_NUESTRO_TALLER', 'NUESTRO_PEC_OTRO_TALLER'];
+
+function calcularFuga(base) {
+  const perdidos = base.filter(r => r.clasificacion.codigo === 'OTRO_PEC');
+  const destinos = { cordoba_capital: 0, interior_cordoba: 0, otra_provincia: 0, sin_dato: 0 };
+  let mismaLocalidad = 0, conDato = 0;
+  const talleres = {}, pecs = {};
+  perdidos.forEach(r => {
+    const c = r.clasificacion;
+    const d = destinoFuga(c);
+    destinos[d]++;
+    if (d !== 'sin_dato') {
+      conDato++;
+      if (normLugar(c.tallerLocalidad) === normLugar(r.registro.ULOCALIDAD)) mismaLocalidad++;
+    }
+    const tk = c.tallerCodigo || c.tallerNombre;
+    if (!talleres[tk]) talleres[tk] = { nombre: c.tallerNombre, codigo: c.tallerCodigo, lugar: c.tallerLocalidad || '', n: 0 };
+    talleres[tk].n++;
+    const pk = c.pecCodigo || c.pecNombre;
+    if (!pecs[pk]) pecs[pk] = { nombre: c.pecNombre, codigo: c.pecCodigo, lugar: c.pecLocalidad || '', n: 0 };
+    pecs[pk].n++;
+  });
+  const top = o => Object.values(o).sort((a, b) => b.n - a.n).slice(0, 10);
+  // Clientes de otras provincias (ej. Catamarca, La Rioja que vienen a Córdoba).
+  const foraneos = base.filter(r => { const p = normLugar(r.registro.UPROVINCIA); return p && p !== 'cordoba'; });
+  const porProv = {};
+  foraneos.forEach(r => {
+    const p = r.registro.UPROVINCIA || '-';
+    if (!porProv[p]) porProv[p] = { prov: p, total: 0, nosotros: 0, otro: 0, no: 0 };
+    porProv[p].total++;
+    const k = r.clasificacion.codigo;
+    if (RENOVO_CON_NOSOTROS.includes(k)) porProv[p].nosotros++;
+    else if (k === 'OTRO_PEC') porProv[p].otro++;
+    else porProv[p].no++;
+  });
+  return {
+    perdidos: perdidos.length, destinos, mismaLocalidad, conDato,
+    red: base.filter(r => r.clasificacion.codigo === 'NUESTRO_PEC_OTRO_TALLER').length,
+    talleres: top(talleres), pecs: top(pecs),
+    foraneos: foraneos.length,
+    foraneosProv: Object.values(porProv).sort((a, b) => b.total - a.total)
+  };
+}
+
+function renderVerifFuga(base) {
+  const cont = document.getElementById('verifFuga');
+  if (!cont) return;
+  const f = calcularFuga(base);
+  if (!f.perdidos && !f.foraneos) { cont.innerHTML = ''; return; }
+  const pct = (v, t) => t ? (Math.round(v / t * 1000) / 10) + '%' : '-';
+  const caja = 'background:#f8f9fa;border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;color:var(--text);';
+  const th = 'text-align:left;padding:4px 8px;font-size:.8em;color:var(--text-sec);border-bottom:1px solid var(--border);';
+  const td = 'padding:4px 8px;font-size:.85em;color:var(--text);border-bottom:1px solid #eee;';
+  const tabla = (titulo, filas, cols) => `<div style="${caja}"><div style="font-weight:600;margin-bottom:6px;">${titulo}</div>
+    <table style="width:100%;border-collapse:collapse;"><thead><tr>${cols.map(c => `<th style="${th}">${c}</th>`).join('')}</tr></thead>
+    <tbody>${filas.length ? filas.join('') : `<tr><td style="${td}" colspan="${cols.length}">Sin datos</td></tr>`}</tbody></table></div>`;
+
+  let h = `<div class="card" style="margin:0;"><h3 style="margin-bottom:4px;">¿A dónde se fueron?</h3>
+    <p style="font-size:.85em;color:var(--text-sec);margin:0 0 12px;">Los <b>${f.perdidos}</b> que renovaron en otro PEC (fuera de nuestra red), según dónde está el taller donde renovaron.
+    Aparte, <b>${f.red}</b> renovaron en un taller externo pero con nuestro PEC (siguen en la red).</p>`;
+
+  if (f.perdidos) {
+    const filasDest = ['cordoba_capital', 'interior_cordoba', 'otra_provincia', 'sin_dato']
+      .filter(k => f.destinos[k])
+      .map(k => `<tr><td style="${td}">${FUGA_LABELS[k]}</td><td style="${td}">${f.destinos[k]}</td><td style="${td}">${pct(f.destinos[k], f.perdidos)}</td></tr>`);
+    let notaDest = '';
+    if (f.conDato) notaDest = `<p style="font-size:.8em;color:var(--text-sec);margin:6px 0 0;"><b>${f.mismaLocalidad}</b> de ${f.conDato} (${pct(f.mismaLocalidad, f.conDato)}) renovaron en un taller de su misma localidad.</p>`;
+    if (f.destinos.sin_dato) notaDest += `<p style="font-size:.8em;color:var(--text-sec);margin:6px 0 0;">“Sin dato”: verificaciones anteriores al 03/10 no guardaban la localidad; se completa en la próxima actualización automática.</p>`;
+    h += `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;">`;
+    h += tabla('Destino', filasDest, ['Dónde', 'Cant.', '%']).replace('</table></div>', `</table>${notaDest}</div>`);
+    h += tabla('Talleres que se los llevaron', f.talleres.map(t =>
+      `<tr><td style="${td}">${esc(t.nombre)}<div style="font-size:.85em;color:var(--text-sec);">${esc(t.codigo)}${t.lugar ? ' · ' + esc(t.lugar) : ''}</div></td><td style="${td}">${t.n}</td></tr>`), ['Taller', 'Cant.']);
+    h += tabla('PEC que se los llevaron', f.pecs.map(p =>
+      `<tr><td style="${td}">${esc(p.nombre)}<div style="font-size:.85em;color:var(--text-sec);">${esc(p.codigo)}${p.lugar ? ' · ' + esc(p.lugar) : ''}</div></td><td style="${td}">${p.n}</td></tr>`), ['PEC', 'Cant.']);
+    h += `</div>`;
+  }
+
+  if (f.foraneos) {
+    h += `<div style="margin-top:12px;">` + tabla(`Clientes de otras provincias (${f.foraneos})`, f.foraneosProv.map(p =>
+      `<tr><td style="${td}">${esc(p.prov)}</td><td style="${td}">${p.total}</td><td style="${td}">${p.nosotros}</td><td style="${td}">${p.otro}</td><td style="${td}">${p.no}</td></tr>`),
+      ['Provincia del cliente', 'Total', 'Renovó con nosotros', 'Otro PEC', 'No renovó / otro']) + `</div>`;
+  }
+  h += `</div>`;
+  cont.innerHTML = h;
 }
 
 // Renderiza la tabla de resultados, dentro del grupo de envío elegido (verifFiltroTag) y
@@ -2006,6 +2113,38 @@ function generarVerifPDF() {
       doc.addImage(img, 'PNG', 65, y, 80, 80);
     }
   } catch (e) { /* si el canvas no está disponible, el PDF igual sale con la tabla */ }
+
+  // Página 2: ¿A dónde se fueron? (mismo cálculo que la pantalla, sobre el mismo grupo)
+  const f = calcularFuga(base);
+  if (f.perdidos || f.foraneos) {
+    const pctTxt = (v, t) => t ? (Math.round(v / t * 1000) / 10) + '%' : '-';
+    const azul = { fillColor: [26, 115, 232] };
+    doc.addPage();
+    doc.setFontSize(14); doc.setTextColor(32, 33, 36); doc.text('¿A dónde se fueron?', 14, 20);
+    doc.setFontSize(9); doc.setTextColor(95, 99, 104);
+    doc.text(`${f.perdidos} renovaron en otro PEC. Aparte, ${f.red} renovaron en taller externo con nuestro PEC.`, 14, 27);
+    let y = 32;
+    if (f.perdidos) {
+      doc.autoTable({ startY: y, head: [['Destino', 'Cantidad', '%']], theme: 'striped', headStyles: azul,
+        body: ['cordoba_capital', 'interior_cordoba', 'otra_provincia', 'sin_dato'].filter(k => f.destinos[k])
+          .map(k => [FUGA_LABELS[k], String(f.destinos[k]), pctTxt(f.destinos[k], f.perdidos)]) });
+      y = doc.lastAutoTable.finalY + 4;
+      if (f.conDato) {
+        doc.setFontSize(9); doc.setTextColor(95, 99, 104);
+        doc.text(`${f.mismaLocalidad} de ${f.conDato} (${pctTxt(f.mismaLocalidad, f.conDato)}) renovaron en un taller de su misma localidad.`, 14, y + 2);
+        y += 6;
+      }
+      doc.autoTable({ startY: y + 2, head: [['Talleres que se los llevaron', 'Localidad', 'Cant.']], theme: 'striped', headStyles: azul,
+        body: f.talleres.map(t => [`${t.nombre} (${t.codigo})`, t.lugar || '-', String(t.n)]) });
+      doc.autoTable({ startY: doc.lastAutoTable.finalY + 6, head: [['PEC que se los llevaron', 'Localidad', 'Cant.']], theme: 'striped', headStyles: azul,
+        body: f.pecs.map(p => [`${p.nombre} (${p.codigo})`, p.lugar || '-', String(p.n)]) });
+      y = doc.lastAutoTable.finalY + 6;
+    }
+    if (f.foraneos) {
+      doc.autoTable({ startY: y, head: [['Clientes de otras provincias', 'Total', 'Con nosotros', 'Otro PEC', 'No renovó / otro']], theme: 'striped', headStyles: azul,
+        body: f.foraneosProv.map(p => [p.prov, String(p.total), String(p.nosotros), String(p.otro), String(p.no)]) });
+    }
+  }
 
   doc.save(`${titulo.replace(/\s+/g, '_')}.pdf`);
 }
@@ -2085,12 +2224,12 @@ async function reintentarFallidos() {
 function exportarVerifCSV() {
   if (!STATE.verificacion) return;
   const base = filtrarPorTagVerif(STATE.verificacion);
-  const header = 'DOMINIO;NOMBRE;TELEFONO;GRUPO_ENVIO;CLASIFICACION;PEC;TALLER;TALLER_COD;PEC_COD;FECHA_OP;NUEVO_VTO';
+  const header = 'DOMINIO;NOMBRE;TELEFONO;GRUPO_ENVIO;CLASIFICACION;PEC;TALLER;TALLER_COD;PEC_COD;FECHA_OP;NUEVO_VTO;TALLER_LOCALIDAD;TALLER_PROVINCIA;CLIENTE_LOCALIDAD;CLIENTE_PROVINCIA';
   const limpio = v => String(v == null ? '' : v).replace(/[;\n\r]+/g, ' ').trim();
   const lines = base.map(r => {
     const c = r.clasificacion;
     const tag = VENC_LABELS[tagVerif(r)] || tagVerif(r);
-    return [r.registro.UDOMINIO, r.registro.UAPEYNOM, telVerif(r.registro), tag, c.texto, c.pecNombre, c.tallerNombre, c.tallerCodigo, c.pecCodigo, c.fechaOp, c.nuevoVto].map(limpio).join(';');
+    return [r.registro.UDOMINIO, r.registro.UAPEYNOM, telVerif(r.registro), tag, c.texto, c.pecNombre, c.tallerNombre, c.tallerCodigo, c.pecCodigo, c.fechaOp, c.nuevoVto, c.tallerLocalidad, c.tallerProvincia, r.registro.ULOCALIDAD, r.registro.UPROVINCIA].map(limpio).join(';');
   });
   const blob = new Blob([header + '\n' + lines.join('\n')], { type: 'text/csv' });
   const url = URL.createObjectURL(blob);

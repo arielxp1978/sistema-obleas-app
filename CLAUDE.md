@@ -559,6 +559,22 @@ Pantalla para auditar la calidad del teléfono que carga un taller (o un comisio
 6. **Migrar a la fuente única de talleres cuando exista (encargo `CEO-84`)** — hoy `TALLERES_PROPIOS` es una lista fija, y el código de taller de ENARGAS **no es estable** (ver el hallazgo de 2026-08-18 más abajo). Cuando el CEO defina la identidad única de talleres en `cdp_nova`, hay que sacar la lista de `procesar.js` y consumir esa fuente. Hasta entonces la lista es correcta pero frágil: se rompe en silencio si ENARGAS recodifica un taller nuestro.
 7. **`verificar.js` legacy** — no hardcodea talleres: usa `config.talleresPropios` (default del endpoint `/api/config` en server.js, hoy `IRT0550, HIT0797, QUT0856`). Si hay un `data/config.json` guardado en S18 con la lista vieja, **ese archivo pisa el default** — revisarlo tras un cambio de talleres.
 
+### Estado 2026-10-03 — "Todas las PH" + bloque "¿A dónde se fueron?" en Verificación Post-Envío
+
+- **Grupo de envío:** opción combinada `ph_todas` (= `ph_urgente` + `ph`) vía `VENC_GRUPOS`. Solo aparece si el
+  período tiene los dos grupos.
+- **`lib/clasificar-lote.js` guarda además** `tallerLocalidad/tallerProvincia/pecLocalidad/pecProvincia`
+  (vienen en `datosTaller`/`datosPEC` de dalegas cuando resuelve desde scans; desde InfoSys vienen vacíos, pero
+  eso es solo nuestros PEC). Verificaciones guardadas antes del 03/10 no los tienen: se completan en la próxima
+  corrida automática (septiembre se re-corrió a mano el 03/10).
+- **Bloque "¿A dónde se fueron?"** (`calcularFuga` / `renderVerifFuga`, también página 2 del PDF y 4 columnas
+  nuevas en el CSV): destino de los `OTRO_PEC` por ubicación del taller nuevo, misma localidad que el cliente,
+  top 10 talleres y PEC, clientes de otras provincias (por `UPROVINCIA`). Sobre el grupo de envío elegido.
+- Ideas y pedidos de Ariel sobre medición (PH no hechas, acumulado de nunca renovados, tablero mensual):
+  `docs/medicion-gestion-obleas-ph.md` y encargo **CEO-202**. **Motivos de llamadas: a mano, no en el sistema.**
+- ⚠️ **Los datos NO están en `/home/akeneo/sistema-obleas-app/data/`** como dice más arriba: el compose usa el
+  volumen Docker `obleas-data` montado en `/app/data`. Leerlos con `docker exec sistema-obleas ...`.
+
 ### Estado al cierre 2026-09-16 — Filtro por grupo de envío en Verificación Post-Envío
 
 Pedido de Ariel: poder analizar la verificación (renovó / no renovó) **cruzada por la etiqueta con la
