@@ -559,6 +559,24 @@ Pantalla para auditar la calidad del teléfono que carga un taller (o un comisio
 6. **Migrar a la fuente única de talleres cuando exista (encargo `CEO-84`)** — hoy `TALLERES_PROPIOS` es una lista fija, y el código de taller de ENARGAS **no es estable** (ver el hallazgo de 2026-08-18 más abajo). Cuando el CEO defina la identidad única de talleres en `cdp_nova`, hay que sacar la lista de `procesar.js` y consumir esa fuente. Hasta entonces la lista es correcta pero frágil: se rompe en silencio si ENARGAS recodifica un taller nuestro.
 7. **`verificar.js` legacy** — no hardcodea talleres: usa `config.talleresPropios` (default del endpoint `/api/config` en server.js, hoy `IRT0550, HIT0797, QUT0856`). Si hay un `data/config.json` guardado en S18 con la lista vieja, **ese archivo pisa el default** — revisarlo tras un cambio de talleres.
 
+### Estado 2026-10-03 — KPI central "obleas público" en Verificación Post-Envío
+
+Pedido de Ariel: un KPI central que durante la campaña muestre la evolución y, cerrado el mes, quede fijo y
+cambie de color. Definido con Ariel:
+- **Grande:** % que renovó en **nuestro taller** (`NUESTRO_PEC_NUESTRO_TALLER`). **Chico:** % de **toda la red**
+  (+ `NUESTRO_PEC_OTRO_TALLER`). **Denominador: todos los vehículos que vencen en el mes** (no solo los enviados).
+- **Cierre = mismo día que la actualización automática** (`DIA_CIERRE` = 20 del mes siguiente). Antes: azul
+  "⏳ En curso". Después: gris oscuro "🔒 Cerrado · número fijo".
+- **Número fijo:** `kpiEvolucion` en el JSON del período = una foto por día (ART) por grupo de envío. La arma
+  **solo el server** (`registrarKpi` en `lib/verificacion-auto.js`), en cada corrida automática y en cada
+  `POST /api/periodos`; no se toma nunca de la pantalla y deja de moverse al cerrar la ventana. Cerrado → el KPI
+  muestra la última foto ≤ cierre aunque alguien re-corra la verificación. Períodos viejos sin fotos muestran el
+  valor actual.
+- **Curva de evolución:** NO sale de las fotos, sale de `fechaOp` de cada renovación (acumulado día por día desde
+  el 1 del mes hasta hoy o el cierre). Por eso también funciona para meses anteriores. Sept 2026: 1,6% el 1/9 →
+  7,6% el 20/9 → 14,4% el 30/9 → 17,3% el 3/10 (red: 43,7%).
+- Respeta el filtro de grupo de envío (incluido "Todas las PH"). También va en el PDF de resumen.
+
 ### Estado 2026-10-03 — "Todas las PH" + bloque "¿A dónde se fueron?" en Verificación Post-Envío
 
 - **Grupo de envío:** opción combinada `ph_todas` (= `ph_urgente` + `ph`) vía `VENC_GRUPOS`. Solo aparece si el

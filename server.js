@@ -1052,6 +1052,8 @@ app.post('/api/periodos', (req, res) => {
     if (vDisco && vDisco.actualizadoEn && vNueva && vNueva.actualizadoEn && vNueva.actualizadoEn < vDisco.actualizadoEn) {
       data.verificacion = vDisco;
     }
+    // La evolución del KPI la maneja el server: nunca se toma de la pantalla.
+    data.kpiEvolucion = verificacionAuto.registrarKpi(data.periodoId, data.verificacion, enDisco && enDisco.kpiEvolucion);
     const saved = guardarPeriodo(data.periodoId, data);
     res.json({ ok: true, periodo: saved });
   } catch (e) {

@@ -34,6 +34,16 @@ header .links a:hover, header .links button:hover { background:rgba(255,255,255,
 .card { background:var(--card); border-radius:var(--radius); border:1px solid var(--border); padding:20px; margin-bottom:16px; box-shadow:0 1px 3px rgba(0,0,0,.05); }
 .card h3 { font-size:1.05em; color:var(--text); margin-bottom:12px; padding-bottom:8px; border-bottom:1px solid #eee; }
 .metrics-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px; margin-bottom:16px; }
+.kpi-central { display:grid; grid-template-columns:minmax(220px,300px) 1fr; gap:16px; align-items:stretch; }
+@media (max-width:720px) { .kpi-central { grid-template-columns:1fr; } }
+.kpi-caja { border-radius:var(--radius); padding:16px 18px; color:#fff; }
+.kpi-caja.en-curso { background:#1a73e8; }
+.kpi-caja.cerrado { background:#3c4043; }
+.kpi-caja .kpi-estado { display:inline-block; font-size:.75em; font-weight:600; padding:3px 8px; border-radius:12px; background:rgba(255,255,255,.2); color:#fff; }
+.kpi-caja .kpi-valor { font-size:2.8em; font-weight:700; line-height:1.1; margin-top:8px; color:#fff; }
+.kpi-caja .kpi-sub { font-size:.85em; color:#fff; opacity:.9; }
+.kpi-caja .kpi-red { margin-top:10px; padding-top:8px; border-top:1px solid rgba(255,255,255,.3); font-size:.9em; color:#fff; }
+.kpi-evol { background:#fff; border:1px solid var(--border); border-radius:var(--radius); padding:10px 12px; color:var(--text); min-height:160px; }
 .metric-card { background:linear-gradient(135deg,#f8f9fa,#fff); border:1px solid var(--border); border-radius:var(--radius); padding:16px; text-align:center; }
 .metric-card .value { font-size:1.8em; font-weight:700; color:var(--primary); }
 .metric-card .label { font-size:.8em; color:var(--text-sec); margin-top:4px; }
@@ -381,6 +391,7 @@ input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 2px rg
   </div>
   <div class="card hidden" id="verifResultados">
     <h3>Resultados de Verificación</h3>
+    <div id="verifKpi" class="mb-4"></div>
     <div class="metrics-grid" id="verifMetrics"></div>
     <div class="charts-row mb-4">
       <div class="card"><canvas id="chartVerif"></canvas></div>
@@ -523,6 +534,7 @@ let STATE = {
   totalOriginal: 0,
   totalFiltrado: 0,
   verificacion: null,
+  kpiEvolucion: [],        // fotos diarias del KPI central (las arma el server, ver lib/verificacion-auto.js)
   resumenTipo: null,
   excluidosComisionista: null,
   archivosCargados: [],
@@ -1665,12 +1677,15 @@ async function abrirVerificacionPorDefecto() {
         if (v && v.detalle && (!STATE.verificacion || (v.actualizadoEn && v.actualizadoEn > (STATE._verifAutoEn || '')))) {
           STATE.verificacion = v.detalle;
           STATE._verifAutoEn = v.actualizadoEn || null;
+          STATE.kpiEvolucion = data.kpiEvolucion || STATE.kpiEvolucion;
           renderVerifResultados();
         }
       } catch {}
     }
   }
+  if (info.diaCierre) STATE._diaCierre = info.diaCierre;
   renderVerifAutoInfo(info);
+  if (STATE.verificacion) renderVerifKpi(filtrarPorTagVerif(STATE.verificacion));
 }
 
 function renderVerifAutoInfo(info) {
@@ -1933,6 +1948,103 @@ function renderVerifResultados() {
 
   renderVerifTabla(sel ? sel.value : '');
   renderVerifFuga(base);
+  renderVerifKpi(base);
+}
+
+// ── KPI central de obleas público ──
+// % de los que vencen en el mes que renovaron en NUESTRO taller (grande) y en toda la red (chico),
+// sobre TODOS los vehículos del período (decisión de Ariel 2026-10-03). En curso hasta el día de
+// cierre (20 del mes siguiente, mismo que la actualización automática); después queda fijo en la
+// última foto diaria y cambia de color.
+function cierreKpi(periodoId) {
+  const m = /^(\d{1,2})-(\d{4})$/.exec(periodoId || '');
+  if (!m) return null;
+  let mes = parseInt(m[1]) + 1, anio = parseInt(m[2]);
+  if (mes > 12) { mes = 1; anio++; }
+  return `${anio}-${String(mes).padStart(2, '0')}-${String(STATE._diaCierre || 20).padStart(2, '0')}`;
+}
+function hoyART() { return new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10); }
+// Valores de una foto para el grupo elegido ('' = todos; combinadas = suma de sus grupos).
+function kpiDeFoto(foto, filtro) {
+  const keys = filtro ? (VENC_GRUPOS[filtro] || [filtro]) : [''];
+  const r = { total: 0, nt: 0, red: 0 };
+  keys.forEach(k => { const g = (foto.grupos || {})[k]; if (g) { r.total += g.total; r.nt += g.nt; r.red += g.red; } });
+  return r;
+}
+function calcularKpi(base) {
+  const filtro = (document.getElementById('verifFiltroTag') || {}).value || '';
+  const cierre = cierreKpi(STATE.periodo);
+  const cerrado = !!cierre && hoyART() > cierre;
+  const fotos = (STATE.kpiEvolucion || []).filter(f => !cierre || f.fecha <= cierre);
+  let v;
+  if (cerrado && fotos.length) v = kpiDeFoto(fotos[fotos.length - 1], filtro);   // número fijo
+  else {
+    v = { total: base.length, nt: 0, red: 0 };
+    base.forEach(r => {
+      const c = r.clasificacion.codigo;
+      if (c === 'NUESTRO_PEC_NUESTRO_TALLER') { v.nt++; v.red++; }
+      else if (c === 'NUESTRO_PEC_OTRO_TALLER') v.red++;
+    });
+  }
+  const pct = (a, t) => t ? Math.round(a / t * 1000) / 10 : 0;
+  return { ...v, pctNt: pct(v.nt, v.total), pctRed: pct(v.red, v.total), cerrado, cierre, filtro,
+    serie: serieKpi(base, cierre, pct) };
+}
+// Curva acumulada día por día armada con la fecha de cada renovación (fechaOp): % del total
+// que ya había renovado a esa fecha. Las renovaciones anticipadas (antes del mes) arrancan la curva.
+// Va desde el día 1 del mes hasta hoy o el cierre, lo que llegue primero.
+function serieKpi(base, cierre, pct) {
+  const m = /^(\d{1,2})-(\d{4})$/.exec(STATE.periodo || '');
+  if (!m || !base.length) return [];
+  const desde = `${m[2]}-${String(parseInt(m[1])).padStart(2, '0')}-01`;
+  const hoy = hoyART();
+  const hasta = cierre && cierre < hoy ? cierre : hoy;
+  if (hasta < desde) return [];
+  const ops = base.map(r => ({ c: r.clasificacion.codigo, f: (r.clasificacion.fechaOp || '').slice(0, 10) }))
+    .filter(o => (o.c === 'NUESTRO_PEC_NUESTRO_TALLER' || o.c === 'NUESTRO_PEC_OTRO_TALLER') && /^\d{4}-\d{2}-\d{2}$/.test(o.f));
+  const serie = [];
+  for (let d = new Date(desde + 'T12:00:00Z'); ; d.setUTCDate(d.getUTCDate() + 1)) {
+    const f = d.toISOString().slice(0, 10);
+    if (f > hasta) break;
+    const nt = ops.filter(o => o.c === 'NUESTRO_PEC_NUESTRO_TALLER' && o.f <= f).length;
+    const red = ops.filter(o => o.f <= f).length;
+    serie.push({ fecha: f, nt: pct(nt, base.length), red: pct(red, base.length) });
+  }
+  return serie;
+}
+function renderVerifKpi(base) {
+  const cont = document.getElementById('verifKpi');
+  if (!cont || !STATE.verificacion) return;
+  const k = calcularKpi(base);
+  const fmt = n => String(n).replace('.', ',');
+  const cierreTxt = k.cierre ? fmtFechaCorta(k.cierre) : '-';
+  const estado = k.cerrado ? `🔒 Cerrado el ${cierreTxt} · número fijo` : `⏳ En curso · se cierra el ${cierreTxt}`;
+  const grupo = k.filtro ? ` · ${VENC_LABELS[k.filtro] || k.filtro}` : '';
+  cont.innerHTML = `<div class="kpi-central">
+    <div class="kpi-caja ${k.cerrado ? 'cerrado' : 'en-curso'}">
+      <span class="kpi-estado">${estado}</span>
+      <div class="kpi-valor">${fmt(k.pctNt)}%</div>
+      <div class="kpi-sub">renovaron en <b>nuestro taller</b> · ${k.nt} de ${k.total} que vencen${esc(grupo)}</div>
+      <div class="kpi-red">Toda la red (con nuestro PEC): <b>${fmt(k.pctRed)}%</b> · ${k.red}</div>
+    </div>
+    <div class="kpi-evol">
+      <div style="font-size:.85em;font-weight:600;margin-bottom:4px;">Evolución durante la campaña</div>
+      ${k.serie.length >= 2 ? '<div style="position:relative;height:130px;"><canvas id="chartKpiEvol"></canvas></div>'
+        : `<p style="font-size:.82em;color:var(--text-sec);margin:8px 0 0;">La curva aparece cuando el mes de vencimiento ya empezó (% acumulado según la fecha de cada renovación).</p>`}
+    </div>
+  </div>`;
+  destroyChart('kpiEvol');
+  if (k.serie.length >= 2) {
+    charts.kpiEvol = new Chart(document.getElementById('chartKpiEvol'), {
+      type: 'line',
+      data: { labels: k.serie.map(p => fmtFechaCorta(p.fecha).slice(0, 5)), datasets: [
+        { label: 'Nuestro taller %', data: k.serie.map(p => p.nt), borderColor: k.cerrado ? '#3c4043' : '#1a73e8', backgroundColor: 'transparent', tension: .25, pointRadius: 2 },
+        { label: 'Toda la red %', data: k.serie.map(p => p.red), borderColor: '#9aa0a6', borderDash: [4, 3], backgroundColor: 'transparent', tension: .25, pointRadius: 0 }
+      ] },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } },
+        scales: { y: { beginAtZero: true, ticks: { callback: v => v + '%' } } } }
+    });
+  }
 }
 
 // ── ¿A dónde se fueron? ──
@@ -2090,6 +2202,10 @@ function generarVerifPDF() {
   doc.setFontSize(11); doc.setTextColor(32, 33, 36);
   doc.text(`Grupo de envío: ${tagTexto}`, 14, 45);
   doc.text(`Total verificado: ${total}`, 14, 52);
+  const kpi = calcularKpi(base);
+  doc.setFontSize(11); doc.setTextColor(kpi.cerrado ? 60 : 26, kpi.cerrado ? 64 : 115, kpi.cerrado ? 67 : 232);
+  doc.text(`KPI obleas público: ${String(kpi.pctNt).replace('.', ',')}% en nuestro taller (${kpi.nt}/${kpi.total}) · red ${String(kpi.pctRed).replace('.', ',')}% — ${kpi.cerrado ? 'CERRADO (número fijo)' : 'en curso hasta el ' + fmtFechaCorta(kpi.cierre)}`, 14, 59, { maxWidth: 182 });
+  doc.setTextColor(32, 33, 36);
 
   // Orden fijo para la hoja (los presentes; los desconocidos al final)
   const orden = ['NUESTRO_PEC_NUESTRO_TALLER','NUESTRO_PEC_OTRO_TALLER','OTRO_PEC','NO_RENOVO','SIN_REGISTRO_GNC','SIN_GNC','BAJA_GNC','FORMATO_INVALIDO','ERROR_TECNICO','PROCESANDO','PENDIENTE'];
@@ -2098,7 +2214,7 @@ function generarVerifPDF() {
     .sort((a, b) => idx(a[0]) - idx(b[0]))
     .map(([k, v]) => [VERIF_LABELS[k] || k, String(v), (total > 0 ? Math.round(v / total * 1000) / 10 : 0) + '%']);
   doc.autoTable({
-    startY: 57,
+    startY: 66,
     head: [['Clasificación', 'Cantidad', '%']],
     body,
     theme: 'striped', headStyles: { fillColor: [26, 115, 232] }
@@ -2358,6 +2474,8 @@ async function guardarPeriodo() {
     const data = await resp.json();
     if (data.ok) {
       STATE.sinGuardar = false;
+      STATE.kpiEvolucion = data.periodo.kpiEvolucion || STATE.kpiEvolucion;
+      if (STATE.verificacion) renderVerifResultados();
       actualizarArchivoActivo();  // limpia el pulso del botón y el "· sin guardar"
       alert(periodoNombreLegible(STATE.periodo) + ' guardado (v' + data.periodo.version + ')');
       cargarPeriodos();
@@ -2424,6 +2542,7 @@ async function cargarPeriodo(id, opts = {}) {
     STATE.totalFiltrado = data.totalFiltrado;
     STATE.verificacion = data.verificacion?.detalle || null;
     STATE._verifAutoEn = data.verificacion?.actualizadoEn || null;
+    STATE.kpiEvolucion = data.kpiEvolucion || [];
     setObjetivoRenov(data.objetivoRenovaciones || 0);
 
     document.getElementById('btnGuardar').classList.remove('hidden');
