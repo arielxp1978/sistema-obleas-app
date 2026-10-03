@@ -2261,21 +2261,20 @@ function generarVerifPDF() {
   doc.autoTable({ ...tablaBase, startY: yK + hK + 13, tableWidth: 104, styles: { ...tablaBase.styles, fontSize: 9.5, cellPadding: 2.2 },
     head: [['Clasificación', 'Cantidad', '%']],
     body: filas.map(([k, v]) => [VERIF_LABELS[k] || k, String(v), pctTxt(v, total)]),
-    columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' } } });
+    columnStyles: { 0: { cellPadding: { top: 2.2, bottom: 2.2, left: 8, right: 2.2 } }, 1: { halign: 'right' }, 2: { halign: 'right' } },
+    // Cuadradito del color de la torta al principio de cada clasificación (reemplaza la leyenda).
+    didDrawCell: d => {
+      if (d.section !== 'body' || d.column.index !== 0) return;
+      const hex = (VERIF_COLORS[filas[d.row.index][0]] || '#999999').replace('#', '');
+      doc.setFillColor(parseInt(hex.slice(0, 2), 16), parseInt(hex.slice(2, 4), 16), parseInt(hex.slice(4, 6), 16));
+      doc.rect(d.cell.x + 2.5, d.cell.y + d.cell.height / 2 - 1.6, 3.2, 3.2, 'F');
+    } });
   const torta = pdfChartImg({
     type: 'doughnut',
     data: { labels: filas.map(([k]) => VERIF_LABELS[k] || k), datasets: [{ data: filas.map(([, v]) => v), backgroundColor: filas.map(([k]) => VERIF_COLORS[k] || '#999'), borderWidth: 2, borderColor: '#fff' }] },
     options: { cutout: '55%', plugins: { legend: { display: false }, datalabels: { display: false } } }
   }, 600, 600);
   if (torta) doc.addImage(torta, 'PNG', 128, yK + hK + 8, 62, 62);
-  // Referencia de colores debajo de la tabla (la torta no lleva leyenda propia)
-  let yL = doc.lastAutoTable.finalY + 6;
-  doc.setFontSize(8);
-  filas.forEach(([k]) => {
-    const hex = (VERIF_COLORS[k] || '#999999').replace('#', '');
-    doc.setFillColor(parseInt(hex.slice(0, 2), 16), parseInt(hex.slice(2, 4), 16), parseInt(hex.slice(4, 6), 16));
-    doc.rect(14, yL - 2.6, 3, 3, 'F'); doc.setTextColor(...TEXTO); doc.text(VERIF_LABELS[k] || k, 19, yL); yL += 5;
-  });
 
   // ── Página 2: ¿A dónde se fueron? (mismo cálculo que la pantalla, sobre el mismo grupo) ──
   const f = calcularFuga(base);
