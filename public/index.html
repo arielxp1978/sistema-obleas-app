@@ -2042,7 +2042,7 @@ function renderVerifKpi(base) {
         { label: 'Toda la red %', data: k.serie.map(p => p.red), borderColor: '#9aa0a6', borderDash: [4, 3], backgroundColor: 'transparent', tension: .25, pointRadius: 0 }
       ] },
       options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } },
-        scales: { y: { beginAtZero: true, ticks: { callback: v => v + '%' } } } }
+        scales: { y: { min: 0, max: 100, ticks: { stepSize: 25, callback: v => v + '%' } } } }
     });
   }
 }
