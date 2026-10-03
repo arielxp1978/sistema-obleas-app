@@ -1834,8 +1834,11 @@ const VENC_LABELS = {
   ph_urgente: 'Nova PH Urgente',
   ph: 'Nova PH',
   solo_oblea: 'Nova Obleas',
-  ph_desconocido: 'Sin dato de PH (CSV)'
+  ph_desconocido: 'Sin dato de PH (CSV)',
+  ph_todas: 'Todas las PH (Urgente + PH)'   // opción combinada del selector, no es un tag real
 };
+// Opciones del selector que agrupan varios tags reales.
+const VENC_GRUPOS = { ph_todas: ['ph_urgente', 'ph'] };
 function tagVerif(r) {
   return (r.registro && r.registro._tipoVencimiento) || 'ph_desconocido';
 }
@@ -1843,7 +1846,9 @@ function tagVerif(r) {
 function filtrarPorTagVerif(lista) {
   const sel = document.getElementById('verifFiltroTag');
   const val = sel ? sel.value : '';
-  return val ? lista.filter(r => tagVerif(r) === val) : lista;
+  if (!val) return lista;
+  const tags = VENC_GRUPOS[val] || [val];
+  return lista.filter(r => tags.includes(tagVerif(r)));
 }
 
 function renderVerifResultados() {
@@ -1860,6 +1865,14 @@ function renderVerifResultados() {
     let optsTag = `<option value="">Todas (${STATE.verificacion.length})</option>`;
     Object.entries(conteoTag).sort((a, b) => b[1] - a[1]).forEach(([k, v]) => {
       optsTag += `<option value="${k}">${VENC_LABELS[k] || k} (${v})</option>`;
+    });
+    // Combinadas: solo si hay más de un tag del grupo presente (si hay uno solo, es igual a esa opción).
+    Object.entries(VENC_GRUPOS).forEach(([k, tags]) => {
+      const presentes = tags.filter(t => conteoTag[t]);
+      if (presentes.length < 2) return;
+      const v = presentes.reduce((acc, t) => acc + conteoTag[t], 0);
+      conteoTag[k] = v;
+      optsTag += `<option value="${k}">${VENC_LABELS[k]} (${v})</option>`;
     });
     selTag.innerHTML = optsTag;
     selTag.value = conteoTag[prevTag] ? prevTag : '';
