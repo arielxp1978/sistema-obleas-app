@@ -2174,8 +2174,23 @@ function renderVerifTabla(filtro) {
   cont.innerHTML = html;
 }
 
-// PDF de RESUMEN de la verificación post-envío: solo lo necesario para completar la hoja
-// (título, total, KPIs con % y el gráfico). NO incluye el listado de clientes.
+// PDF de RESUMEN de la verificación post-envío: KPI central + evolución, clasificación con torta
+// (página 1) y "¿A dónde se fueron?" (página 2). NO incluye el listado de clientes.
+// Los gráficos se dibujan aparte para el PDF (pdfChartImg), sin depender de los de la pantalla:
+// los de la pantalla pueden estar en tamaño 0 si el período se cargó con otra pestaña visible.
+function pdfChartImg(config, w, h) {
+  try {
+    const cv = document.createElement('canvas');
+    cv.width = w; cv.height = h;
+    cv.style.cssText = 'position:fixed;left:-10000px;top:0;';
+    document.body.appendChild(cv);
+    const opts = config.options || {};
+    const ch = new Chart(cv.getContext('2d'), { ...config, options: { ...opts, responsive: false, animation: false, devicePixelRatio: 1 } });
+    const url = cv.toDataURL('image/png', 1.0);
+    ch.destroy(); cv.remove();
+    return url;
+  } catch (e) { return null; }
+}
 function generarVerifPDF() {
   if (!STATE.verificacion || !STATE.verificacion.length) { alert('Primero corré una verificación.'); return; }
   const { jsPDF } = window.jspdf;
@@ -2188,78 +2203,119 @@ function generarVerifPDF() {
   const selTag = document.getElementById('verifFiltroTag');
   const tagVal = selTag ? selTag.value : '';
   const tagTexto = tagVal ? (VENC_LABELS[tagVal] || tagVal) : 'Todas';
+  const pctTxt = (v, t) => (t ? Math.round(v / t * 1000) / 10 : 0).toLocaleString('es-AR') + '%';
+  const AZUL = [26, 115, 232], GRIS = [60, 64, 67], TEXTO = [32, 33, 36], SEC = [95, 99, 104];
+  const tablaBase = { theme: 'striped', styles: { fontSize: 8, cellPadding: 1.2, textColor: TEXTO }, headStyles: { fillColor: AZUL, textColor: 255, fontStyle: 'bold' }, margin: { left: 14, right: 14 },
+    // El encabezado toma la misma alineación que su columna (los números van a la derecha).
+    didParseCell: d => { if (d.section === 'head') { const cs = ((d.table.styles && d.table.styles.columnStyles) || (d.table.settings && d.table.settings.columnStyles) || {})[d.column.index]; if (cs && cs.halign) d.cell.styles.halign = cs.halign; } } };
 
   const base = filtrarPorTagVerif(STATE.verificacion);
   const resumen = {};
   base.forEach(r => { const c = r.clasificacion.codigo; resumen[c] = (resumen[c] || 0) + 1; });
   const total = base.length;
-
-  // Header
-  doc.setFontSize(18); doc.setTextColor(26, 115, 232); doc.text('Nova GNC', 14, 20);
-  doc.setFontSize(14); doc.setTextColor(32, 33, 36); doc.text(titulo, 14, 30);
-  doc.setFontSize(9); doc.setTextColor(95, 99, 104);
-  doc.text(`Generado: ${new Date().toLocaleString('es-AR')}`, 14, 36);
-  doc.setFontSize(11); doc.setTextColor(32, 33, 36);
-  doc.text(`Grupo de envío: ${tagTexto}`, 14, 45);
-  doc.text(`Total verificado: ${total}`, 14, 52);
   const kpi = calcularKpi(base);
-  doc.setFontSize(11); doc.setTextColor(kpi.cerrado ? 60 : 26, kpi.cerrado ? 64 : 115, kpi.cerrado ? 67 : 232);
-  doc.text(`KPI obleas público: ${String(kpi.pctNt).replace('.', ',')}% en nuestro taller (${kpi.nt}/${kpi.total}) · red ${String(kpi.pctRed).replace('.', ',')}% — ${kpi.cerrado ? 'CERRADO (número fijo)' : 'en curso hasta el ' + fmtFechaCorta(kpi.cierre)}`, 14, 59, { maxWidth: 182 });
-  doc.setTextColor(32, 33, 36);
+  const colorKpi = kpi.cerrado ? GRIS : AZUL;
 
-  // Orden fijo para la hoja (los presentes; los desconocidos al final)
+  // ── Encabezado ──
+  doc.setFontSize(18); doc.setTextColor(...AZUL); doc.text('Nova GNC', 14, 18);
+  doc.setFontSize(14); doc.setTextColor(...TEXTO); doc.text(titulo, 14, 26);
+  doc.setFontSize(9); doc.setTextColor(...SEC);
+  doc.text(`Grupo de envío: ${tagTexto}  ·  Total que vencen: ${total}  ·  Generado: ${new Date().toLocaleString('es-AR')}`, 14, 32);
+
+  // ── KPI central (recuadro de color: azul en curso, gris oscuro cerrado) + evolución ──
+  const yK = 37, hK = 62;
+  doc.setFillColor(...colorKpi); doc.roundedRect(14, yK, 64, hK, 2, 2, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(8); doc.text(kpi.cerrado ? `CERRADO el ${fmtFechaCorta(kpi.cierre)} · número fijo` : `EN CURSO · se cierra el ${fmtFechaCorta(kpi.cierre)}`, 18, yK + 7);
+  doc.setFontSize(9); doc.text('KPI obleas público', 18, yK + 14);
+  doc.setFontSize(32); doc.setFont(undefined, 'bold'); doc.text(pctTxt(kpi.nt, kpi.total), 18, yK + 29); doc.setFont(undefined, 'normal');
+  doc.setFontSize(8.5); doc.text(doc.splitTextToSize(`renovaron en nuestro taller · ${kpi.nt} de ${kpi.total} que vencen`, 56), 18, yK + 36);
+  doc.setDrawColor(255, 255, 255); doc.setLineWidth(0.2); doc.line(18, yK + 46, 74, yK + 46);
+  doc.text('Toda la red (con nuestro PEC):', 18, yK + 52);
+  doc.setFont(undefined, 'bold'); doc.text(`${pctTxt(kpi.red, kpi.total)} · ${kpi.red} vehículos`, 18, yK + 57); doc.setFont(undefined, 'normal');
+
+  doc.setDrawColor(218, 220, 224); doc.roundedRect(82, yK, 114, hK, 2, 2, 'S');
+  doc.setTextColor(...TEXTO); doc.setFontSize(9); doc.text('Evolución durante la campaña', 86, yK + 6);
+  if (kpi.serie.length >= 2) {
+    const css = `rgb(${colorKpi.join(',')})`;
+    const img = pdfChartImg({
+      type: 'line',
+      data: { labels: kpi.serie.map(p => fmtFechaCorta(p.fecha).slice(0, 5)), datasets: [
+        { label: 'Nuestro taller %', data: kpi.serie.map(p => p.nt), borderColor: css, borderWidth: 3, pointRadius: 0, tension: .25 },
+        { label: 'Toda la red %', data: kpi.serie.map(p => p.red), borderColor: '#9aa0a6', borderWidth: 2, borderDash: [6, 4], pointRadius: 0, tension: .25 }
+      ] },
+      options: { plugins: { legend: { position: 'bottom', labels: { boxWidth: 18, font: { size: 17 }, color: '#202124' } }, datalabels: { display: false } },
+        scales: { y: { min: 0, max: 100, ticks: { stepSize: 25, font: { size: 17 }, color: '#5f6368', callback: v => v + '%' } },
+                  x: { ticks: { font: { size: 16 }, color: '#5f6368', maxTicksLimit: 8, maxRotation: 0 } } } }
+    }, 760, 360);
+    if (img) doc.addImage(img, 'PNG', 85, yK + 8, 108, 51);
+  } else {
+    doc.setFontSize(8.5); doc.setTextColor(...SEC); doc.text('La curva aparece cuando el mes de vencimiento ya empezó.', 86, yK + 14);
+  }
+
+  // ── Clasificación + torta ──
   const orden = ['NUESTRO_PEC_NUESTRO_TALLER','NUESTRO_PEC_OTRO_TALLER','OTRO_PEC','NO_RENOVO','SIN_REGISTRO_GNC','SIN_GNC','BAJA_GNC','FORMATO_INVALIDO','ERROR_TECNICO','PROCESANDO','PENDIENTE'];
   const idx = c => { const i = orden.indexOf(c); return i < 0 ? 999 : i; };
-  const body = Object.entries(resumen)
-    .sort((a, b) => idx(a[0]) - idx(b[0]))
-    .map(([k, v]) => [VERIF_LABELS[k] || k, String(v), (total > 0 ? Math.round(v / total * 1000) / 10 : 0) + '%']);
-  doc.autoTable({
-    startY: 66,
+  const filas = Object.entries(resumen).sort((a, b) => idx(a[0]) - idx(b[0]));
+  doc.setFontSize(11); doc.setTextColor(...TEXTO); doc.text('Clasificación', 14, yK + hK + 10);
+  doc.autoTable({ ...tablaBase, startY: yK + hK + 13, tableWidth: 104, styles: { ...tablaBase.styles, fontSize: 9.5, cellPadding: 2.2 },
     head: [['Clasificación', 'Cantidad', '%']],
-    body,
-    theme: 'striped', headStyles: { fillColor: [26, 115, 232] }
+    body: filas.map(([k, v]) => [VERIF_LABELS[k] || k, String(v), pctTxt(v, total)]),
+    columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' } } });
+  const torta = pdfChartImg({
+    type: 'doughnut',
+    data: { labels: filas.map(([k]) => VERIF_LABELS[k] || k), datasets: [{ data: filas.map(([, v]) => v), backgroundColor: filas.map(([k]) => VERIF_COLORS[k] || '#999'), borderWidth: 2, borderColor: '#fff' }] },
+    options: { cutout: '55%', plugins: { legend: { display: false }, datalabels: { display: false } } }
+  }, 600, 600);
+  if (torta) doc.addImage(torta, 'PNG', 128, yK + hK + 8, 62, 62);
+  // Referencia de colores debajo de la tabla (la torta no lleva leyenda propia)
+  let yL = doc.lastAutoTable.finalY + 6;
+  doc.setFontSize(8);
+  filas.forEach(([k]) => {
+    const hex = (VERIF_COLORS[k] || '#999999').replace('#', '');
+    doc.setFillColor(parseInt(hex.slice(0, 2), 16), parseInt(hex.slice(2, 4), 16), parseInt(hex.slice(4, 6), 16));
+    doc.rect(14, yL - 2.6, 3, 3, 'F'); doc.setTextColor(...TEXTO); doc.text(VERIF_LABELS[k] || k, 19, yL); yL += 5;
   });
 
-  // Gráfico (imagen del donut de la pantalla)
-  try {
-    const canvas = document.getElementById('chartVerif');
-    if (canvas) {
-      const img = canvas.toDataURL('image/png', 1.0);
-      const y = doc.lastAutoTable.finalY + 10;
-      doc.addImage(img, 'PNG', 65, y, 80, 80);
-    }
-  } catch (e) { /* si el canvas no está disponible, el PDF igual sale con la tabla */ }
-
-  // Página 2: ¿A dónde se fueron? (mismo cálculo que la pantalla, sobre el mismo grupo)
+  // ── Página 2: ¿A dónde se fueron? (mismo cálculo que la pantalla, sobre el mismo grupo) ──
   const f = calcularFuga(base);
   if (f.perdidos || f.foraneos) {
-    const pctTxt = (v, t) => t ? (Math.round(v / t * 1000) / 10) + '%' : '-';
-    const azul = { fillColor: [26, 115, 232] };
     doc.addPage();
-    doc.setFontSize(14); doc.setTextColor(32, 33, 36); doc.text('¿A dónde se fueron?', 14, 20);
-    doc.setFontSize(9); doc.setTextColor(95, 99, 104);
-    doc.text(`${f.perdidos} renovaron en otro PEC. Aparte, ${f.red} renovaron en taller externo con nuestro PEC.`, 14, 27);
-    let y = 32;
+    doc.setFontSize(14); doc.setTextColor(...TEXTO); doc.text('¿A dónde se fueron?', 14, 18);
+    doc.setFontSize(9); doc.setTextColor(...SEC);
+    doc.text(`${f.perdidos} renovaron en otro PEC (fuera de nuestra red). Aparte, ${f.red} renovaron en taller externo con nuestro PEC.`, 14, 24);
+    let y = 28;
     if (f.perdidos) {
-      doc.autoTable({ startY: y, head: [['Destino', 'Cantidad', '%']], theme: 'striped', headStyles: azul,
+      doc.autoTable({ ...tablaBase, startY: y, tableWidth: 100, head: [['Destino', 'Cantidad', '%']],
+        columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' } },
         body: ['cordoba_capital', 'interior_cordoba', 'otra_provincia', 'sin_dato'].filter(k => f.destinos[k])
           .map(k => [FUGA_LABELS[k], String(f.destinos[k]), pctTxt(f.destinos[k], f.perdidos)]) });
-      y = doc.lastAutoTable.finalY + 4;
       if (f.conDato) {
-        doc.setFontSize(9); doc.setTextColor(95, 99, 104);
-        doc.text(`${f.mismaLocalidad} de ${f.conDato} (${pctTxt(f.mismaLocalidad, f.conDato)}) renovaron en un taller de su misma localidad.`, 14, y + 2);
-        y += 6;
+        doc.setFontSize(9); doc.setTextColor(...SEC);
+        doc.text(doc.splitTextToSize(`${f.mismaLocalidad} de ${f.conDato} (${pctTxt(f.mismaLocalidad, f.conDato)}) renovaron en un taller de su misma localidad.`, 76), 120, y + 6);
       }
-      doc.autoTable({ startY: y + 2, head: [['Talleres que se los llevaron', 'Localidad', 'Cant.']], theme: 'striped', headStyles: azul,
-        body: f.talleres.map(t => [`${t.nombre} (${t.codigo})`, t.lugar || '-', String(t.n)]) });
-      doc.autoTable({ startY: doc.lastAutoTable.finalY + 6, head: [['PEC que se los llevaron', 'Localidad', 'Cant.']], theme: 'striped', headStyles: azul,
-        body: f.pecs.map(p => [`${p.nombre} (${p.codigo})`, p.lugar || '-', String(p.n)]) });
       y = doc.lastAutoTable.finalY + 6;
+      doc.autoTable({ ...tablaBase, startY: y, head: [['Talleres que se los llevaron', 'Localidad', 'Cant.']],
+        columnStyles: { 0: { cellWidth: 100 }, 2: { halign: 'right', cellWidth: 14 } },
+        body: f.talleres.map(t => [`${t.nombre} (${t.codigo})`, t.lugar || '-', String(t.n)]) });
+      doc.autoTable({ ...tablaBase, startY: doc.lastAutoTable.finalY + 5, head: [['PEC que se los llevaron', 'Localidad', 'Cant.']],
+        columnStyles: { 0: { cellWidth: 100 }, 2: { halign: 'right', cellWidth: 14 } },
+        body: f.pecs.map(p => [`${p.nombre} (${p.codigo})`, p.lugar || '-', String(p.n)]) });
+      y = doc.lastAutoTable.finalY + 5;
     }
     if (f.foraneos) {
-      doc.autoTable({ startY: y, head: [['Clientes de otras provincias', 'Total', 'Con nosotros', 'Otro PEC', 'No renovó / otro']], theme: 'striped', headStyles: azul,
+      doc.autoTable({ ...tablaBase, startY: y, rowPageBreak: 'avoid', head: [['Clientes de otras provincias', 'Total', 'Con nosotros', 'Otro PEC', 'No renovó / otro']],
+        columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' } },
         body: f.foraneosProv.map(p => [p.prov, String(p.total), String(p.nosotros), String(p.otro), String(p.no)]) });
     }
+  }
+
+  // Pie de página en todas las hojas
+  const n = doc.getNumberOfPages();
+  for (let i = 1; i <= n; i++) {
+    doc.setPage(i); doc.setFontSize(8); doc.setTextColor(...SEC);
+    doc.text(`${titulo} · Grupo: ${tagTexto}`, 14, 289);
+    doc.text(`Página ${i} de ${n}`, 196, 289, { align: 'right' });
   }
 
   doc.save(`${titulo.replace(/\s+/g, '_')}.pdf`);
