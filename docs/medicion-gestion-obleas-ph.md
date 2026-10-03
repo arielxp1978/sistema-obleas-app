@@ -133,6 +133,19 @@ en ningún sistema** hasta que Ariel lo pida. (Las categorías de la sección 3 
 **Segundo tablero (balance captados/perdidos + tendencia 12 meses + acumulado de no renovados):** dónde vive lo
 define el CEO (CEO-202).
 
+**Pedido de Ariel sobre el segundo tablero (2026-10-03):** *"es importante que en ese tablero sí tengamos la vista
+general, no solo las obleas de campañas"*. El KPI de campaña (obleas del mes que el año pasado hicimos nosotros) ya
+está en la Verificación Post-Envío; **el tablero tiene que mostrar todo el movimiento de los talleres propios**:
+- **Producción total** del mes en nuestros talleres (sin comisionistas externos): obleas/revisiones, PH,
+  conversiones, por sucursal. Ref. sept 2026: 350 revisiones (124 Gral. Paz + 226 R20).
+- **De dónde sale esa producción:** campaña del mes (~140 en sept) · atrasados/recuperados de meses anteriores
+  (~145) · clientes nuevos que vienen de otro taller/PEC (~48) · conversiones nuevas.
+- **Balance de la base:** nuevos + recuperados − perdidos, mes a mes y tendencia de 12 meses.
+- Más lo ya anotado: perdidos por destino/taller/PEC, acumulado anual de nunca renovados, PH sin hacer.
+Fuente: `enargas_data.nova_operaciones` (filtrar taller propio Y comisionista propio — lista `COMISIONISTAS_PROPIOS`
+en `sistema-obleas/app/lib/procesar.js`; `IRT0550`/`QUT0856` también firman obleas de comisionistas externos).
+
+
 ## 7. Hecho el 2026-10-03
 
 - Filtro "Todas las PH (Urgente + PH)" en la Verificación Post-Envío (commit `4a2cc7c`).
