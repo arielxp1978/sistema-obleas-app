@@ -576,6 +576,14 @@ cambie de color. Definido con Ariel:
   el 1 del mes hasta hoy o el cierre). Por eso también funciona para meses anteriores. Sept 2026: 1,6% el 1/9 →
   7,6% el 20/9 → 14,4% el 30/9 → 17,3% el 3/10 (red: 43,7%).
 - Respeta el filtro de grupo de envío (incluido "Todas las PH"). También va en el PDF de resumen.
+- ⚠️ **Mismo día: corregido `data/config.json` de producción** (pendiente de OB-8 que nunca se aplicó): tenía
+  `talleresPropios` con `QUT0867` (Car Equip) y sin `QUT0856` (Grupo P5 / R20). **Todo R20 se clasificaba como
+  "Taller Externo" desde 12/2025.** Backup `data/config.json.bak-20261003-QUT0867`. Septiembre re-corrido: nuestro
+  taller 96 → **232 de 554 (41,9%)**. **Abril y mayo 2026 siguen con la clasificación vieja** (períodos cerrados,
+  no se re-corrieron: decisión pendiente de Ariel).
+- ⚠️ **Margen conocido del KPI:** los comisionistas externos firman con `IRT0550`/`QUT0856` y la respuesta de
+  dalegas no trae el comisionista → cuentan como "nuestro taller". Sept: ~22 de 232. Encargo **ES-43** a Enargas
+  Scrap; cuando esté, ajustar `clasificar-lote.js` con `COMISIONISTAS_PROPIOS`.
 
 ### Estado 2026-10-03 — "Todas las PH" + bloque "¿A dónde se fueron?" en Verificación Post-Envío
 
