@@ -752,6 +752,17 @@ app.get('/api/base/importar', async (req, res) => {
     const mes = String(req.query.mes || '');
     const tipo = String(req.query.tipo || 'todos').toLowerCase();
     if (!/^\d{4}-\d{2}$/.test(mes)) return res.status(400).json({ error: 'Parámetro "mes" inválido (formato YYYY-MM)' });
+    res.json(await importarMesBase(mes, tipo));
+  } catch (e) {
+    console.error('[base/importar] error:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Importación de un mes desde nova_operaciones, con la misma tubería del CSV. La usa la ruta de
+// arriba y la carga de meses históricos (script de mantenimiento, ver CLAUDE.md "Historia del año").
+async function importarMesBase(mes, tipo = 'todos') {
+  {
 
     const [y, m] = mes.split('-').map(Number);
     const desde = `${y}-${String(m).padStart(2, '0')}-01`;
@@ -830,7 +841,7 @@ app.get('/api/base/importar', async (req, res) => {
     // Filtrado = solo comisionista propio. Igual que el CSV "Vencimientos Usuarios".
     const resultado = procesarRows(seleccion);
 
-    res.json({
+    return {
       ok: true,
       fuente: 'infosys',
       mes,
@@ -846,12 +857,9 @@ app.get('/api/base/importar', async (req, res) => {
       resumenTipo: resultado.resumenTipo,
       archivos: resultado.archivos.map(archivoMeta),
       registros: resultado.normalizados.map(mapRegistro)
-    });
-  } catch (e) {
-    console.error('[base/importar] error:', e);
-    res.status(500).json({ error: e.message });
+    };
   }
-});
+}
 
 // ============================================================
 // EXPORT A MANYCHAT (encargo OB-4) — lo consume GP-37/n8n para inyectar contactos
@@ -1006,6 +1014,19 @@ const verifAuto = verificacionAuto.crear({
   }).catch(e => console.error('[verif-auto] no se pudo notificar:', e.message))
 });
 
+// Historia del año: un resumen por período guardado con verificación (última hoja del PDF).
+// Meses cerrados = como estaban el día de cierre (renovaciones con fechaOp <= cierre).
+app.get('/api/kpi-anual', (req, res) => {
+  const anio = String(req.query.anio || '');
+  if (!/^\d{4}$/.test(anio)) return res.status(400).json({ error: 'Parámetro "anio" inválido' });
+  const meses = listarPeriodos()
+    .filter(p => new RegExp(`^\\d{1,2}-${anio}$`).test(p.periodoId))
+    .map(p => verificacionAuto.kpiMes(leerPeriodo(p.periodoId)))
+    .filter(Boolean)
+    .sort((a, b) => a.mes - b.mes);
+  res.json({ ok: true, anio: Number(anio), meses });
+});
+
 // El clasificador es el mismo archivo en el server y en el navegador (fuente única).
 app.get('/js/clasificar-lote.js', (req, res) => {
   res.type('application/javascript').sendFile(path.join(__dirname, 'lib', 'clasificar-lote.js'));
@@ -1146,9 +1167,11 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-app.listen(PORT, () => {
+if (require.main === module) app.listen(PORT, () => {
   console.log(`\n  Sistema de Obleas GNC - Nova GNC`);
   console.log(`  Corriendo en http://localhost:${PORT}`);
   console.log(`  Acceso: Google OAuth + autorización del panel (panel.acceso_app, sección 'obleas')\n`);
   verifAuto.iniciar();
 });
+
+module.exports = { importarMesBase };

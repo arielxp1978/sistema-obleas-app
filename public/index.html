@@ -1979,9 +1979,12 @@ function calcularKpi(base) {
   let v;
   if (cerrado && fotos.length) v = kpiDeFoto(fotos[fotos.length - 1], filtro);   // número fijo
   else {
+    // En curso: todo lo de hoy. Cerrado sin foto (meses cargados después): como estaba el día de
+    // cierre, contando solo renovaciones con fechaOp <= cierre (mismo criterio que kpiMes del server).
     v = { total: base.length, nt: 0, red: 0 };
     base.forEach(r => {
-      const c = r.clasificacion.codigo;
+      const c = r.clasificacion.codigo, fo = String(r.clasificacion.fechaOp || '').slice(0, 10);
+      if (cerrado && /^\d{4}-\d{2}-\d{2}$/.test(fo) && fo > cierre) return;
       if (c === 'NUESTRO_PEC_NUESTRO_TALLER') { v.nt++; v.red++; }
       else if (c === 'NUESTRO_PEC_OTRO_TALLER') v.red++;
     });
@@ -2191,8 +2194,14 @@ function pdfChartImg(config, w, h) {
     return url;
   } catch (e) { return null; }
 }
-function generarVerifPDF() {
+async function generarVerifPDF() {
   if (!STATE.verificacion || !STATE.verificacion.length) { alert('Primero corré una verificación.'); return; }
+  // Historia del año (última hoja). Si falla, el PDF sale igual sin esa hoja.
+  let anual = null;
+  try {
+    const anioPer = (STATE.periodo || '').split('-')[1];
+    if (anioPer) { const r = await authFetch(`/api/kpi-anual?anio=${anioPer}`); if (r && r.ok) anual = await r.json(); }
+  } catch {}
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF();
   const periodo = STATE.periodo || 'sin-fecha';
@@ -2203,11 +2212,11 @@ function generarVerifPDF() {
   const selTag = document.getElementById('verifFiltroTag');
   const tagVal = selTag ? selTag.value : '';
   const tagTexto = tagVal ? (VENC_LABELS[tagVal] || tagVal) : 'Todas';
-  const pctTxt = (v, t) => (t ? Math.round(v / t * 1000) / 10 : 0).toLocaleString('es-AR') + '%';
+  const pctTxt = (v, t) => (t ? Math.round(v / t * 1000) / 10 : 0).toLocaleString('es-AR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%';
   const AZUL = [26, 115, 232], GRIS = [60, 64, 67], TEXTO = [32, 33, 36], SEC = [95, 99, 104];
   const tablaBase = { theme: 'striped', styles: { fontSize: 8, cellPadding: 1.2, textColor: TEXTO }, headStyles: { fillColor: AZUL, textColor: 255, fontStyle: 'bold' }, margin: { left: 14, right: 14 },
     // El encabezado toma la misma alineación que su columna (los números van a la derecha).
-    didParseCell: d => { if (d.section === 'head') { const cs = ((d.table.styles && d.table.styles.columnStyles) || (d.table.settings && d.table.settings.columnStyles) || {})[d.column.index]; if (cs && cs.halign) d.cell.styles.halign = cs.halign; } } };
+    didParseCell: d => { if (d.section === 'head' || d.section === 'foot') { const cs = ((d.table.styles && d.table.styles.columnStyles) || (d.table.settings && d.table.settings.columnStyles) || {})[d.column.index]; if (cs && cs.halign) d.cell.styles.halign = cs.halign; } } };
 
   const base = filtrarPorTagVerif(STATE.verificacion);
   const resumen = {};
@@ -2307,6 +2316,72 @@ function generarVerifPDF() {
         columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' } },
         body: f.foraneosProv.map(p => [p.prov, String(p.total), String(p.nosotros), String(p.otro), String(p.no)]) });
     }
+  }
+
+  // ── Última hoja: historia del año (una fila por mes guardado con verificación) ──
+  if (anual && anual.meses && anual.meses.length) {
+    const MESES_C = ['', 'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+    const keys = tagVal ? (VENC_GRUPOS[tagVal] || [tagVal]) : [''];
+    const suma = gr => { const r = { total: 0, nt: 0, ext: 0, otro: 0, no: 0 }; keys.forEach(k => { const x = (gr || {})[k]; if (x) Object.keys(r).forEach(c => r[c] += x[c] || 0); }); return r; };
+    const filasA = anual.meses.map(m => ({ ...m, v: suma(m.grupos) })).filter(m => m.v.total);
+    const tot = filasA.reduce((a, m) => { Object.keys(a).forEach(c => a[c] += m.v[c]); return a; }, { total: 0, nt: 0, ext: 0, otro: 0, no: 0 });
+    const pnum = (v, t) => t ? Math.round(v / t * 1000) / 10 : null;
+    doc.addPage();
+    doc.setFontSize(14); doc.setTextColor(...TEXTO); doc.text(`Historia del año ${anual.anio}`, 14, 18);
+    doc.setFontSize(8.5); doc.setTextColor(...SEC);
+    const intro = doc.splitTextToSize(`Grupo de envío: ${tagTexto}. Meses cerrados = como quedaron el día de cierre (20 del mes siguiente). Barras: azul = en curso · gris = cerrado.`, 182);
+    doc.text(intro, 14, 24);
+    const yA = 24 + intro.length * 4 + 1;
+
+    // Acumulado del año
+    const cerrados = filasA.filter(m => m.cerrado).length;
+    doc.setFillColor(...GRIS); doc.roundedRect(14, yA, 182, 20, 2, 2, 'F');
+    doc.setTextColor(255, 255, 255); doc.setFontSize(9);
+    doc.text(`Acumulado ${anual.anio} · ${filasA.length} meses (${cerrados} cerrados) · ${tot.total} vehículos que vencían`, 18, yA + 6);
+    doc.setFontSize(16); doc.setFont(undefined, 'bold');
+    doc.text(`${pctTxt(tot.nt, tot.total)} en nuestro taller`, 18, yA + 15);
+    doc.setFont(undefined, 'normal'); doc.setFontSize(10);
+    doc.text(`Toda la red: ${pctTxt(tot.nt + tot.ext, tot.total)} · Otro PEC: ${pctTxt(tot.otro, tot.total)} · No renovó: ${pctTxt(tot.no, tot.total)}`, 192, yA + 15, { align: 'right' });
+
+    // Barras ene-dic: % nuestro taller (azul en curso / gris cerrado) + línea de toda la red
+    const porMes = {}; filasA.forEach(m => { porMes[m.mes] = m; });
+    const meses12 = Array.from({ length: 12 }, (_, i) => i + 1);
+    const img = pdfChartImg({
+      type: 'bar',
+      data: { labels: meses12.map(i => MESES_C[i]), datasets: [
+        { type: 'bar', label: 'Nuestro taller %', order: 2, data: meses12.map(i => porMes[i] ? pnum(porMes[i].v.nt, porMes[i].v.total) : null),
+          backgroundColor: meses12.map(i => porMes[i] && !porMes[i].cerrado ? '#1a73e8' : '#3c4043'), borderRadius: 4,
+          datalabels: { display: c => c.dataset.data[c.dataIndex] != null, anchor: 'end', align: 'start', offset: 6, color: '#ffffff', font: { size: 17, weight: 'bold' }, formatter: v => v.toLocaleString('es-AR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%' } },
+        { type: 'line', label: 'Toda la red %', order: 1, data: meses12.map(i => porMes[i] ? pnum(porMes[i].v.nt + porMes[i].v.ext, porMes[i].v.total) : null),
+          borderColor: '#9aa0a6', borderDash: [6, 4], borderWidth: 2, pointRadius: 4, pointBackgroundColor: '#9aa0a6', spanGaps: false, datalabels: { display: false } }
+      ] },
+      options: { plugins: { legend: { position: 'bottom', labels: { boxWidth: 18, font: { size: 17 }, color: '#202124' } } },
+        scales: { y: { min: 0, max: 100, ticks: { stepSize: 25, font: { size: 17 }, color: '#5f6368', callback: v => v + '%' } },
+                  x: { ticks: { font: { size: 17 }, color: '#202124' } } } },
+      plugins: [ChartDataLabels]
+    }, 980, 400);
+    if (img) doc.addImage(img, 'PNG', 14, yA + 24, 182, 74);
+
+    // Tabla por mes
+    const pc = (v, t) => t ? pctTxt(v, t) : '-';
+    doc.autoTable({ ...tablaBase, startY: yA + 102, styles: { ...tablaBase.styles, fontSize: 8.5, cellPadding: 1.8 },
+      head: [['Mes', 'Vencían', 'Nuestro taller', '%', 'Taller ext.', 'Otro PEC', 'No renovó', '% red', 'Estado']],
+      columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right', fontStyle: 'bold' }, 4: { halign: 'right' }, 5: { halign: 'right' }, 6: { halign: 'right' }, 7: { halign: 'right' } },
+      body: filasA.map(m => [`${meses[m.mes]} ${m.anio}`, String(m.v.total), String(m.v.nt), pc(m.v.nt, m.v.total), String(m.v.ext), String(m.v.otro), String(m.v.no),
+        pc(m.v.nt + m.v.ext, m.v.total), m.cerrado ? 'Cerrado' : `En curso (cierra ${fmtFechaCorta(m.cierre).slice(0, 5)})`]),
+      foot: [['Año', String(tot.total), String(tot.nt), pc(tot.nt, tot.total), String(tot.ext), String(tot.otro), String(tot.no), pc(tot.nt + tot.ext, tot.total), '']],
+      footStyles: { fillColor: [232, 240, 254], textColor: TEXTO, fontStyle: 'bold' } });
+    let yN = doc.lastAutoTable.finalY + 6;
+    doc.setFontSize(8); doc.setTextColor(...SEC);
+    const faltan = meses12.filter(i => !porMes[i] && i <= (new Date().getMonth() + 1)).map(i => MESES_C[i]);
+    if (faltan.length && anual.anio === new Date().getFullYear()) {
+      doc.text(`Sin datos${tagVal ? ' de este grupo' : ''}: ${faltan.join(', ')} (mes sin verificación guardada${tagVal ? ', o cargado de un CSV sin dato de PH' : ''}).`, 14, yN); yN += 5;
+    }
+    // Renovaciones con nuestro PEC que ENARGAS devolvió sin taller: caen en "Taller ext." aunque
+    // muchas son nuestras (encargo ES-45). Se avisa cuando pesan.
+    filasA.filter(m => (m.sinTaller || 0) >= 10).forEach(m => {
+      doc.text(doc.splitTextToSize(`${meses[m.mes]}: ${m.sinTaller} renovaciones con nuestro PEC sin taller informado por ENARGAS figuran en "Taller ext."; muchas son de nuestros talleres, así que "Nuestro taller" está subestimado.`, 182), 14, yN); yN += 8;
+    });
   }
 
   // Pie de página en todas las hojas

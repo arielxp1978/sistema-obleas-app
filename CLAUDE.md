@@ -559,6 +559,33 @@ Pantalla para auditar la calidad del teléfono que carga un taller (o un comisio
 6. **Migrar a la fuente única de talleres cuando exista (encargo `CEO-84`)** — hoy `TALLERES_PROPIOS` es una lista fija, y el código de taller de ENARGAS **no es estable** (ver el hallazgo de 2026-08-18 más abajo). Cuando el CEO defina la identidad única de talleres en `cdp_nova`, hay que sacar la lista de `procesar.js` y consumir esa fuente. Hasta entonces la lista es correcta pero frágil: se rompe en silencio si ENARGAS recodifica un taller nuestro.
 7. **`verificar.js` legacy** — no hardcodea talleres: usa `config.talleresPropios` (default del endpoint `/api/config` en server.js, hoy `IRT0550, HIT0797, QUT0856`). Si hay un `data/config.json` guardado en S18 con la lista vieja, **ese archivo pisa el default** — revisarlo tras un cambio de talleres.
 
+### Estado 2026-10-05 — Historia del año (última hoja del PDF de verificación) + PDF rehecho
+
+Pedido de Ariel: ver en el reporte la foto del año en curso (la hoja 1, pero de todos los meses).
+- **`GET /api/kpi-anual?anio=YYYY`** → por cada período `M-YYYY` guardado con verificación, `kpiMes()`
+  (`lib/verificacion-auto.js`): `{mes, cierre, cerrado, sinTaller, grupos:{'' | tag: {total, nt, ext, otro, no}}}`.
+  **Mes cerrado = como quedó el día de cierre:** solo cuentan las renovaciones con `fechaOp <= cierre` (las de
+  después pasan a "no"). Así se reconstruye el número fijo de meses que se cargaron tarde. La hoja 1 usa el mismo
+  criterio cuando un mes cerrado no tiene foto en `kpiEvolucion`.
+- **PDF (`generarVerifPDF`, ahora async):** hoja 1 = KPI en recuadro (azul en curso / gris cerrado) + curva 0–100%
+  + tabla de clasificación con cuadradito de color + torta; hoja 2 = "¿A dónde se fueron?"; **última hoja =
+  Historia del año**: acumulado, barras ene–dic (% nuestro taller, azul en curso / gris cerrado) con línea de la
+  red, tabla por mes con fila "Año", y notas (meses sin datos; meses con `sinTaller >= 10`). Respeta el grupo de
+  envío. Los gráficos del PDF se dibujan aparte (`pdfChartImg`): los de la pantalla pueden estar en tamaño 0 si
+  el período se abrió con otra pestaña visible (era la causa de la torta vacía).
+- **Carga de enero–agosto 2026 (05/10):** se importaron desde InfoSys `1,2,3,6,7,8-2026` (no existían) y se
+  verificaron `1..8-2026`. **Abril y mayo NO se reimportaron** (tienen las correcciones de teléfonos de Yhonny),
+  solo se verificaron. Backup previo: `data/backups/periodos-20261005-antes-historia.tgz` (en el volumen).
+  Los importados llevan `origenCarga: 'historia-anual 2026-10-05'`. Para importar un mes desde un script:
+  `require('/app/server.js').importarMesBase('YYYY-MM')` (server.js ya no escucha si se carga como módulo).
+- **Resultado (todos los grupos), nuestro taller al cierre:** Ene 38,0 · Feb 26,2* · Mar 42,7 · Abr 40,8 ·
+  May 52,7 · Jun 46,4 · Jul 51,3 · Ago 56,3 · Sep 43,1 (en curso). Acumulado 44,1%.
+  *Febrero: 96 renovaciones nuestras volvieron de dalegas sin taller ni fecha → caen en "Taller ext." →
+  encargo **ES-45** a Enargas Scrap. Cuando esté, re-verificar `2-2026`.
+- ⚠️ **Sesgo conocido en meses viejos:** la verificación mira la oblea vigente HOY. Si un vehículo renovó con
+  nosotros y después tuvo otra operación en otro PEC, se ve como "otro PEC" con fecha posterior al cierre → cuenta
+  como "no". Efecto chico pero existe.
+
 ### Estado 2026-10-03 — KPI central "obleas público" en Verificación Post-Envío
 
 Pedido de Ariel: un KPI central que durante la campaña muestre la evolución y, cerrado el mes, quede fijo y
