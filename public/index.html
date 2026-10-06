@@ -2621,7 +2621,9 @@ async function cargarPeriodos() {
     const resp = await authFetch('/api/periodos');
     if (!resp) return;
     const periodos = await resp.json();
-    periodos.sort((a, b) => new Date(b.guardadoEn) - new Date(a.guardadoEn));
+    // Más reciente arriba, por mes del período (no por fecha de guardado). "sin-fecha" va al final.
+    const clavePeriodo = id => { const m = /^(\d{1,2})-(\d{4})$/.exec(id || ''); return m ? (+m[2]) * 100 + (+m[1]) : -1; };
+    periodos.sort((a, b) => clavePeriodo(b.periodoId) - clavePeriodo(a.periodoId));
     if (periodos.length) {
       let html = '';
       periodos.forEach(p => {
