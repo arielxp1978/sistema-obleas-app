@@ -549,6 +549,12 @@ Pantalla para auditar la calidad del teléfono que carga un taller (o un comisio
 - **Envío al comisionista:** NO automatizado (no hay canal para mandar un PDF a un comisionista externo). Se baja el PDF y se manda a mano. Idea `OB-6` para definir canal.
 - El CSS del documento oficial está scopeado bajo `#docRender .doc` para no chocar con el chrome del app.
 
+## Orden de la lista "Obleas Guardadas" — 2026-10-06
+
+- `cargarPeriodos()` (index.html) ordena por **mes del período** (`M-YYYY`, más reciente arriba); `sin-fecha` va al final.
+- **No volver a ordenar por `guardadoEn`:** cargar o re-guardar meses viejos (ej. ene-ago el 5/10) los sube y hunde al mes en curso, que parece borrado. Caso real: `9-2026` "desapareció" cuando los datos estaban intactos.
+- Si dicen que un período "se borró": primero `docker exec sistema-obleas ls -l /app/data/periodos/` en S18.
+
 ## Pendientes conocidos
 
 1. **Import directo desde InfoSys** — ✅ **funcionando (2026-07-29).** El feed ya trae vendedor (`GNCOBS1`), comisionista (`GNCOBS3`) y nombre (`subtaller_nombre`), así que el import filtra y muestra igual que el CSV. ES-16 sustancialmente cumplido. Verificar con Ariel si se puede cerrar ES-16 del lado de Enargas Scrap y dejar de subir CSV a mano.
