@@ -555,6 +555,39 @@ Pantalla para auditar la calidad del teléfono que carga un taller (o un comisio
 - **No volver a ordenar por `guardadoEn`:** cargar o re-guardar meses viejos (ej. ene-ago el 5/10) los sube y hunde al mes en curso, que parece borrado. Caso real: `9-2026` "desapareció" cuando los datos estaban intactos.
 - Si dicen que un período "se borró": primero `docker exec sistema-obleas ls -l /app/data/periodos/` en S18.
 
+## Vencidos sin renovar — lista de clientes "perdidos" (2026-10-08)
+
+Pantalla `public/vencidos.html` (link "📞 Vencidos sin renovar" en la navbar de index.html) + `lib/vencidos.js`.
+Pedido de Ariel tras ver que septiembre iba con 39 % "no renovó" al 6/10: una lista **para consultar cuando quieran**
+y llamar, con tipificación de la llamada.
+
+- **Qué entra:** vehículos de los períodos guardados (`M-YYYY`) cuya oblea lleva **más de 60 días vencida y hasta
+  120** (`DIAS_MIN`/`DIAS_MAX` en `lib/vencidos.js`) y que no renovaron. Pasados los 120 días salen de la vista
+  principal (filtro "Más de 120 días (archivo)") pero **se conservan con sus notas**. La interpretación de "últimos
+  dos meses" como ventana 60–120 días la hizo el agente — si Ariel quería otra, es solo cambiar las constantes.
+- **Por qué consulta en vivo y NO usa la verificación del período:** la verificación pasa por dalegas, que resuelve
+  desde `enargas_data` (~21 talleres) y no ve renovaciones en talleres que el feed no trae → entre 3 % (agosto) y 7 %
+  (septiembre) de falsos "No renovó". Acá cada patente se confirma con `consultarPatente()` (la misma consulta de
+  ENARGAS de `verificar.js`) y se mira `datosOperacion.fechaVencimiento > vto`. Encargo **ES-46** (Enargas Scrap)
+  para arreglar la causa; esta pantalla no depende de eso. `operacion = Baja` → situación "Baja en ENARGAS";
+  error 2 "Sin registros GNC" → "Sin registro GNC".
+- **Cuándo se actualiza:** una corrida por día a las **08:30 ART** (después del import InfoSys de las 07:30 y de
+  verif-auto 07:45), + botón "Actualizar ahora" + una primera carga sola a los 60 s de arrancar si no hay lista.
+  Solo reconsulta los que siguen abiertos; los que renuevan quedan marcados `renovo` (con fecha) y no se vuelven a
+  consultar. Los que ya figuran renovados en la verificación guardada del período se saltean sin consultar.
+- **Archivos (en el volumen `obleas-data`, NO van a git, tienen datos personales):** `data/vencidos.json` (la lista,
+  la reescribe la corrida) y `data/vencidos-notas.json` (lo que escribe la gente). **Las notas van aparte a propósito:
+  la corrida nunca las toca.** Clave = `patente|vto(YYYY-MM-DD)`.
+- **Tipificaciones (lista cerrada, pedida por Ariel):** `vendio_auto` Vendí el auto · `baja_equipo` Baja de equipo ·
+  `sin_plata` No tengo $ · `sin_tiempo` No tengo tiempo · `oblea_trucha` Oblea trucha, + campo `detalle` libre
+  (1000 car.). Se guarda al elegir/salir del campo; vacío borra la nota; queda `usuario` y fecha.
+  **No hay opción "no atendió"** (no se pidió): si hace falta, agregarla en `TIPIFICACIONES` de `lib/vencidos.js`.
+- **Endpoints (con sesión):** `GET /api/vencidos` (items + notas + tipificaciones), `POST /api/vencidos/nota`
+  `{patente, vto, tipificacion, detalle}`, `POST /api/vencidos/actualizar` (no espera).
+- **Falla:** si más de la mitad de las consultas dan error, aviso a `nova-tecnico` y la lista queda como estaba.
+- **Medición:** esta lista es el insumo para entender por qué no renuevan (estimado ene–jun 2026: ~235 vehículos,
+  ~8 %, más probable cuanto más viejo el auto). Relacionado con CEO-202 (medición de gestión).
+
 ## Pendientes conocidos
 
 1. **Import directo desde InfoSys** — ✅ **funcionando (2026-07-29).** El feed ya trae vendedor (`GNCOBS1`), comisionista (`GNCOBS3`) y nombre (`subtaller_nombre`), así que el import filtra y muestra igual que el CSV. ES-16 sustancialmente cumplido. Verificar con Ariel si se puede cerrar ES-16 del lado de Enargas Scrap y dejar de subir CSV a mano.

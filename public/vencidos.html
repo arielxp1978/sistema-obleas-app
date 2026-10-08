@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vencidos sin renovar — Nova GNC</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%231a73e8'%3E%3Cpath d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm4 18H6V4h7v5h5v11zM8 15h8v1H8zm0-3h8v1H8zm0-3h5v1H8z'/%3E%3C/svg%3E">
+<style>
+:root {
+  --primary: #1a73e8; --primary-dark: #1557b0; --success: #34a853;
+  --warning: #f9ab00; --danger: #ea4335; --bg: #f8f9fa;
+  --card: #fff; --text: #202124; --text-sec: #5f6368;
+  --border: #dadce0; --radius: 8px;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); }
+header { background: linear-gradient(135deg, #1a73e8, #4285f4); color:#fff; padding:16px 24px; display:flex; justify-content:space-between; align-items:center; box-shadow:0 2px 8px rgba(0,0,0,.15); }
+header h1 { font-size:1.3em; font-weight:600; color:#fff; }
+header .links { display:flex; gap:12px; align-items:center; }
+header .links a, header .links button { color:#fff; background:rgba(255,255,255,.15); border:1px solid rgba(255,255,255,.3); padding:6px 14px; border-radius:20px; cursor:pointer; font-size:.85em; text-decoration:none; transition:.2s; }
+header .links a:hover, header .links button:hover { background:rgba(255,255,255,.3); }
+.container { max-width:1500px; margin:0 auto; padding:20px; }
+.card { background:var(--card); border-radius:var(--radius); border:1px solid var(--border); padding:16px 18px; margin-bottom:14px; box-shadow:0 1px 3px rgba(0,0,0,.05); color:var(--text); }
+.intro { font-size:.88em; color:var(--text-sec); line-height:1.5; }
+.intro b { color:var(--text); }
+.kpis { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:14px; }
+.kpi { background:var(--card); border:1px solid var(--border); border-radius:var(--radius); padding:10px 16px; min-width:130px; }
+.kpi .n { font-size:1.5em; font-weight:700; color:var(--text); }
+.kpi .l { font-size:.76em; color:var(--text-sec); }
+.kpi.sel { border-color:var(--primary); box-shadow:0 0 0 2px rgba(26,115,232,.15); }
+.filtros { display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end; }
+.fg { display:flex; flex-direction:column; gap:4px; }
+.fg label { font-size:.76em; font-weight:500; color:var(--text-sec); }
+input, select { padding:7px 10px; border:1px solid var(--border); border-radius:6px; font-size:.88em; font-family:inherit; background:#fff; color:var(--text); }
+input:focus, select:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 2px rgba(26,115,232,.15); }
+.btn { padding:8px 16px; border:none; border-radius:6px; cursor:pointer; font-size:.86em; font-weight:500; background:var(--primary); color:#fff; }
+.btn:hover { background:var(--primary-dark); }
+.btn.sec { background:#fff; color:var(--primary); border:1px solid var(--primary); }
+.btn.sec:hover { background:#e8f0fe; }
+.btn:disabled { opacity:.5; cursor:not-allowed; }
+.estado { font-size:.8em; color:var(--text-sec); margin-left:auto; text-align:right; }
+.tablewrap { overflow-x:auto; }
+table { width:100%; border-collapse:collapse; font-size:.84em; background:#fff; color:var(--text); }
+th { text-align:left; padding:8px 8px; background:#f1f3f4; color:var(--text); font-weight:600; border-bottom:1px solid var(--border); white-space:nowrap; position:sticky; top:0; }
+td { padding:6px 8px; border-bottom:1px solid #eee; vertical-align:middle; color:var(--text); }
+tr:hover td { background:#f6f9ff; color:var(--text); }
+.pat { font-weight:700; font-family:ui-monospace, Menlo, monospace; }
+.sub { font-size:.84em; color:var(--text-sec); }
+.dias { display:inline-block; padding:1px 8px; border-radius:10px; font-weight:600; font-size:.9em; }
+.dias.a { background:#fef7e0; color:#8a5a00; }
+.dias.b { background:#fce8e6; color:#8b1a10; }
+.dias.c { background:#e8eaed; color:#3c4043; }
+.badge { display:inline-block; padding:1px 8px; border-radius:10px; font-size:.8em; font-weight:600; }
+.badge.baja { background:#e8eaed; color:#3c4043; }
+.badge.renovo { background:#e6f4ea; color:#1e6b34; }
+td select { max-width:150px; }
+td input.det { width:240px; }
+.guardado { font-size:.75em; color:#1e6b34; margin-left:4px; opacity:0; transition:opacity .3s; }
+.guardado.on { opacity:1; }
+.quien { font-size:.72em; color:var(--text-sec); }
+a.wa { color:#1e6b34; text-decoration:none; font-weight:600; }
+a.wa:hover { text-decoration:underline; }
+.hidden { display:none !important; }
+.vacio { padding:30px; text-align:center; color:var(--text-sec); }
+.err { background:#fce8e6; color:#8b1a10; border:1px solid #f5b5ae; padding:10px 14px; border-radius:var(--radius); margin-bottom:12px; font-size:.88em; }
+</style>
+</head>
+<body>
+<header>
+  <h1>📞 Vencidos sin renovar</h1>
+  <div class="links">
+    <a href="/">← Volver</a>
+    <button onclick="cerrarSesion()">Salir</button>
+  </div>
+</header>
+
+<div class="container">
+  <div class="card intro" id="intro">Cargando…</div>
+  <div id="error"></div>
+  <div class="kpis" id="kpis"></div>
+
+  <div class="card">
+    <div class="filtros">
+      <div class="fg"><label>Buscar (patente, titular, teléfono)</label><input id="fBuscar" type="search" placeholder="Buscar…" style="width:220px"></div>
+      <div class="fg"><label>Mes que vencía</label><select id="fMes"></select></div>
+      <div class="fg"><label>Vendedor</label><select id="fVend"></select></div>
+      <div class="fg"><label>Tipificación</label><select id="fTipo"></select></div>
+      <div class="fg"><label>Antigüedad</label>
+        <select id="fVent">
+          <option value="ventana">Perdidos (60 a 120 días)</option>
+          <option value="archivo">Más de 120 días (archivo)</option>
+          <option value="todos">Todos</option>
+        </select></div>
+      <div class="fg"><label>Situación</label>
+        <select id="fSit">
+          <option value="abierto">Sin renovar</option>
+          <option value="baja">Baja / sin registro en ENARGAS</option>
+          <option value="renovo">Renovaron después</option>
+          <option value="todas">Todas</option>
+        </select></div>
+      <button class="btn sec" onclick="exportarCSV()">⬇ Exportar CSV</button>
+      <button class="btn" id="btnAct" onclick="actualizarYa()">🔄 Actualizar ahora</button>
+      <div class="estado" id="estado"></div>
+    </div>
+  </div>
+
+  <div class="card tablewrap">
+    <table>
+      <thead><tr>
+        <th>Venció</th><th>Días</th><th>Patente</th><th>Titular</th><th>Teléfono</th><th>Localidad</th>
+        <th>Vehículo</th><th>Vendedor</th><th>Última oblea en</th><th>Situación</th><th>Tipificación</th><th>Detalle</th>
+      </tr></thead>
+      <tbody id="filas"></tbody>
+    </table>
+    <div class="vacio hidden" id="vacio"></div>
+  </div>
+</div>
+
+<script>
+function getToken() {
+  const m = document.cookie.match(/(?:^|;\s*)ob_sesion=([a-f0-9]{64})/);
+  return m ? m[1] : null;
+}
+async function authFetch(url, opts = {}) {
+  if (!opts.headers) opts.headers = {};
+  const t = getToken();
+  if (t) opts.headers['Authorization'] = 'Bearer ' + t;
+  const r = await fetch(url, opts);
+  if (r.status === 401) { window.location.href = '/login'; return null; }
+  return r;
+}
+async function cerrarSesion() {
+  await authFetch('/api/logout', { method: 'POST' });
+  window.location.href = '/login';
+}
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const MESES = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+let DATA = null;          // respuesta de /api/vencidos
+let VISTOS = [];          // items después de filtrar
+
+const fmtFecha = (iso) => iso ? iso.split('-').reverse().join('/') : '';
+const mesDe = (iso) => { const [y, m] = iso.split('-'); return `${y}-${m}`; };
+const mesLabel = (ym) => { const [y, m] = ym.split('-'); return `${MESES[parseInt(m)]} ${y}`; };
+const tipoTexto = (cod) => { const t = DATA.tipificaciones.find(x => x.codigo === cod); return t ? t.texto : ''; };
+const esBaja = (it) => it.estado === 'baja' || it.estado === 'sin_registro';
+
+async function cargar() {
+  const r = await authFetch('/api/vencidos');
+  if (!r) return;
+  if (!r.ok) { $('error').innerHTML = '<div class="err">No se pudo cargar la lista.</div>'; return; }
+  DATA = await r.json();
+  $('intro').innerHTML = `Clientes cuya oblea lleva <b>más de ${DATA.diasMin} días vencida</b> y todavía no renovó en ningún taller (se confirma contra ENARGAS). ` +
+    `Se muestran hasta los ${DATA.diasMax} días; después pasan al archivo, con sus anotaciones. ` +
+    `Cada día entran los que cumplen ${DATA.diasMin} y salen los que renuevan. ` +
+    `Elegí una <b>tipificación</b> cuando llames y, si querés, dejá un <b>detalle</b>.`;
+  armarFiltros();
+  render();
+}
+
+function armarFiltros() {
+  const meses = [...new Set(DATA.items.map(i => mesDe(i.vto)))].sort();
+  const vend = [...new Set(DATA.items.map(i => i.vendedor).filter(Boolean))].sort();
+  const sel = (id, html) => { const el = $(id), v = el.value; el.innerHTML = html; if ([...el.options].some(o => o.value === v)) el.value = v; };
+  sel('fMes', '<option value="">Todos</option>' + meses.map(m => `<option value="${m}">${esc(mesLabel(m))}</option>`).join(''));
+  sel('fVend', '<option value="">Todos</option>' + vend.map(v => `<option>${esc(v)}</option>`).join(''));
+  sel('fTipo', '<option value="">Todas</option><option value="_sin">Sin tipificar</option><option value="_con">Tipificadas</option>' +
+    DATA.tipificaciones.map(t => `<option value="${t.codigo}">${esc(t.texto)}</option>`).join(''));
+}
+
+function filtrar() {
+  const q = $('fBuscar').value.trim().toLowerCase();
+  const mes = $('fMes').value, vend = $('fVend').value, tipo = $('fTipo').value, vent = $('fVent').value, sit = $('fSit').value;
+  return DATA.items.filter(it => {
+    if (vent === 'ventana' && it.dias > DATA.diasMax) return false;
+    if (vent === 'archivo' && it.dias <= DATA.diasMax) return false;
+    if (sit === 'abierto' && it.estado !== 'abierto') return false;
+    if (sit === 'baja' && !esBaja(it)) return false;
+    if (sit === 'renovo' && it.estado !== 'renovo') return false;
+    if (mes && mesDe(it.vto) !== mes) return false;
+    if (vend && it.vendedor !== vend) return false;
+    const t = it.nota && it.nota.tipificacion;
+    if (tipo === '_sin' && t) return false;
+    if (tipo === '_con' && !t) return false;
+    if (tipo && tipo[0] !== '_' && t !== tipo) return false;
+    if (q && !(`${it.patente} ${it.titular} ${it.telefono}`.toLowerCase().includes(q))) return false;
+    return true;
+  });
+}
+
+function render() {
+  VISTOS = filtrar();
+  renderKpis();
+
+  $('filas').innerHTML = VISTOS.map((it, idx) => {
+    const n = it.nota || {};
+    const cls = it.dias > 90 ? 'b' : (it.dias > DATA.diasMax ? 'c' : 'a');
+    const wa = it.whatsapp && it.telEstado === 'OK' ? ` <a class="wa" href="https://wa.me/${esc(it.whatsapp)}" target="_blank" rel="noopener" title="Abrir WhatsApp">WA</a>` : '';
+    const sit = it.estado === 'renovo' ? `<span class="badge renovo">Renovó ${esc(fmtFecha(it.renovoEn))}</span>`
+      : it.estado === 'baja' ? '<span class="badge baja">Baja en ENARGAS</span>'
+      : it.estado === 'sin_registro' ? '<span class="badge baja">Sin registro GNC</span>' : 'Sin renovar';
+    const opts = '<option value="">—</option>' + DATA.tipificaciones.map(t => `<option value="${t.codigo}"${n.tipificacion === t.codigo ? ' selected' : ''}>${esc(t.texto)}</option>`).join('');
+    const quien = n.usuario ? `<div class="quien">${esc(n.usuario)} · ${esc((n.en || '').slice(0, 10).split('-').reverse().join('/'))}</div>` : '';
+    return `<tr data-i="${idx}">
+      <td>${esc(fmtFecha(it.vto))}</td>
+      <td><span class="dias ${cls}">${it.dias}</span></td>
+      <td class="pat">${esc(it.patente)}</td>
+      <td>${esc(it.titular)}</td>
+      <td>${esc(it.telefono) || '<span class="sub">sin teléfono</span>'}${wa}${it.telEstado && it.telEstado !== 'OK' && it.telefono ? ` <span class="sub">(${esc(it.telEstado)})</span>` : ''}</td>
+      <td>${esc(it.localidad)}</td>
+      <td>${esc(it.vehiculo)}${it.anio ? ` <span class="sub">${it.anio}</span>` : ''}</td>
+      <td>${esc(it.vendedor)}</td>
+      <td>${esc(it.ultimaOpEn || '')}<div class="sub">${esc(it.ultimaOp || '')} ${esc(fmtFecha(it.ultimaOpFecha))}</div></td>
+      <td>${sit}</td>
+      <td><select class="tip">${opts}</select></td>
+      <td><input class="det" type="text" maxlength="1000" value="${esc(n.detalle || '')}" placeholder="Detalle…"><span class="guardado">✓ guardado</span>${quien}</td>
+    </tr>`;
+  }).join('');
+  const v = $('vacio');
+  v.classList.toggle('hidden', VISTOS.length > 0);
+  v.textContent = DATA.items.length ? 'No hay vehículos con estos filtros.' : 'La lista todavía está vacía. Apretá "Actualizar ahora" para armarla.';
+
+  const act = DATA.actualizadoEn ? new Date(DATA.actualizadoEn).toLocaleString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' }) : 'todavía no se armó';
+  $('estado').innerHTML = `Actualizada: ${esc(act)}<br>Se actualiza sola todos los días a las ${esc(DATA.horario)}` + (DATA.corriendo ? '<br><b>Actualizando…</b>' : '');
+  $('btnAct').disabled = !!DATA.corriendo;
+}
+
+async function guardarNota(tr) {
+  const it = VISTOS[parseInt(tr.dataset.i)];
+  const tipificacion = tr.querySelector('select.tip').value;
+  const detalle = tr.querySelector('input.det').value;
+  const r = await authFetch('/api/vencidos/nota', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ patente: it.patente, vto: it.vto, tipificacion, detalle })
+  });
+  if (!r) return;
+  const j = await r.json();
+  if (!j.ok) { $('error').innerHTML = `<div class="err">No se pudo guardar: ${esc(j.error || r.status)}</div>`; return; }
+  $('error').innerHTML = '';
+  it.nota = j.nota;               // se actualiza en memoria (VISTOS comparte los objetos con DATA.items)
+  const g = tr.querySelector('.guardado');
+  g.classList.add('on'); setTimeout(() => g.classList.remove('on'), 1800);
+  renderKpis();   // KPIs al día sin redibujar la tabla (así no se pierde el foco)
+}
+function renderKpis() {
+  const con = VISTOS.filter(i => i.nota && i.nota.tipificacion).length;
+  const k = [`<div class="kpi"><div class="n">${VISTOS.length}</div><div class="l">en la lista</div></div>`,
+    `<div class="kpi"><div class="n">${con}</div><div class="l">tipificados</div></div>`,
+    `<div class="kpi"><div class="n">${VISTOS.length - con}</div><div class="l">sin tipificar</div></div>`];
+  DATA.tipificaciones.forEach(t => {
+    const n = VISTOS.filter(i => i.nota && i.nota.tipificacion === t.codigo).length;
+    if (n) k.push(`<div class="kpi"><div class="n">${n}</div><div class="l">${esc(t.texto)}</div></div>`);
+  });
+  $('kpis').innerHTML = k.join('');
+}
+
+$('filas').addEventListener('change', (e) => {
+  const tr = e.target.closest('tr'); if (!tr) return;
+  if (e.target.matches('select.tip, input.det')) guardarNota(tr);
+});
+['fBuscar', 'fMes', 'fVend', 'fTipo', 'fVent', 'fSit'].forEach(id => $(id).addEventListener(id === 'fBuscar' ? 'input' : 'change', render));
+
+function csvCelda(v) { return '"' + String(v == null ? '' : v).replace(/"/g, '""').replace(/[\r\n]+/g, ' ') + '"'; }
+function exportarCSV() {
+  const cols = ['Venció', 'Días vencida', 'Patente', 'Titular', 'Teléfono', 'Localidad', 'Vehículo', 'Año', 'Vendedor', 'Última oblea en', 'Situación', 'Tipificación', 'Detalle', 'Anotó', 'Fecha nota'];
+  const filas = VISTOS.map(i => {
+    const n = i.nota || {};
+    const sit = i.estado === 'renovo' ? 'Renovó ' + fmtFecha(i.renovoEn) : i.estado === 'baja' ? 'Baja en ENARGAS' : i.estado === 'sin_registro' ? 'Sin registro GNC' : 'Sin renovar';
+    return [fmtFecha(i.vto), i.dias, i.patente, i.titular, i.telefono, i.localidad, i.vehiculo, i.anio || '', i.vendedor, i.ultimaOpEn || '', sit,
+      tipoTexto(n.tipificacion), n.detalle || '', n.usuario || '', (n.en || '').slice(0, 10)].map(csvCelda).join(';');
+  });
+  const blob = new Blob(['﻿' + [cols.map(csvCelda).join(';'), ...filas].join('\r\n')], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `vencidos-sin-renovar-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click(); URL.revokeObjectURL(a.href);
+}
+
+async function actualizarYa() {
+  const r = await authFetch('/api/vencidos/actualizar', { method: 'POST' });
+  if (!r) return;
+  const j = await r.json();
+  if (!j.ok) { $('error').innerHTML = `<div class="err">${esc(j.error)}</div>`; return; }
+  $('btnAct').disabled = true;
+  $('estado').innerHTML = '<b>Actualizando…</b> (puede tardar unos minutos)';
+  const t = setInterval(async () => {
+    const rr = await authFetch('/api/vencidos'); if (!rr) return;
+    const d = await rr.json();
+    if (!d.corriendo) { clearInterval(t); DATA = d; armarFiltros(); render(); }
+  }, 8000);
+}
+
+cargar();
+</script>
+</body>
+</html>

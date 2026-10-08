@@ -17,6 +17,7 @@ function decodeCsv(buf) {
 const { clasificarPatente, consultarPatente } = require('./lib/verificar');
 const { guardarPeriodo, leerPeriodo, listarPeriodos, eliminarPeriodo, generarHistorial } = require('./lib/storage');
 const verificacionAuto = require('./lib/verificacion-auto');
+const vencidosLib = require('./lib/vencidos');
 
 const app = express();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
@@ -1014,6 +1015,38 @@ const verifAuto = verificacionAuto.crear({
   }).catch(e => console.error('[verif-auto] no se pudo notificar:', e.message))
 });
 
+// ============================================================
+// VENCIDOS SIN RENOVAR (lista de clientes perdidos: oblea vencida hace más de 60 días)
+// Lógica en lib/vencidos.js. Una corrida por día (08:30 ART) + botón "Actualizar ahora".
+// ============================================================
+const vencidos = vencidosLib.crear({
+  leerConfig: () => {
+    try { if (fs.existsSync(CONFIG_PATH)) return JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8')); } catch {}
+    return { pecPropios: ['3145', '3286'], talleresPropios: [...TALLERES_PROPIOS] };
+  },
+  notificar: (mensaje) => fetch(COMUNICACIONES_HUB_URL, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tipo: 'nova-tecnico', mensaje }),
+    signal: AbortSignal.timeout(10000)
+  }).catch(e => console.error('[vencidos] no se pudo notificar:', e.message))
+});
+
+app.get('/api/vencidos', (req, res) => res.json(vencidos.obtener()));
+
+// Tipificar una llamada: { patente, vto (YYYY-MM-DD), tipificacion, detalle }. Vacío = borra la nota.
+app.post('/api/vencidos/nota', (req, res) => {
+  const s = req.sesion || {};
+  const r = vencidos.guardarNota(req.body || {}, s.nombre || s.email || '');
+  res.status(r.ok ? 200 : (r.status || 400)).json(r);
+});
+
+// Actualizar ya. No espera: responde enseguida y la corrida sigue en el server.
+app.post('/api/vencidos/actualizar', (req, res) => {
+  if (vencidos.estaCorriendo()) return res.status(409).json({ ok: false, error: 'Ya hay una actualización corriendo' });
+  vencidos.actualizar(`manual (${(req.sesion && req.sesion.email) || 'usuario'})`);
+  res.json({ ok: true });
+});
+
 // Historia del año: un resumen por período guardado con verificación (última hoja del PDF).
 // Meses cerrados = como estaban el día de cierre (renovaciones con fechaOp <= cierre).
 app.get('/api/kpi-anual', (req, res) => {
@@ -1172,6 +1205,7 @@ if (require.main === module) app.listen(PORT, () => {
   console.log(`  Corriendo en http://localhost:${PORT}`);
   console.log(`  Acceso: Google OAuth + autorización del panel (panel.acceso_app, sección 'obleas')\n`);
   verifAuto.iniciar();
+  vencidos.iniciar();
 });
 
 module.exports = { importarMesBase };
