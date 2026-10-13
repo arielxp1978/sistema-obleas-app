@@ -357,7 +357,7 @@ Una oblea es nuestra si es **taller nuestro Y comisionista nuestro** (las dos, c
 - **Visibilidad anti-error:** `procesarRows` devuelve `excluidosComisionista` (total + desglose por código) y el frontend muestra un banner con los excluidos, para cazar un código nuestro que quedó afuera del allowlist.
 
 ### Split obleas / PH
-`tipoGestion(r)`: `UCODGEST === 'X'` → **PH** (Revisión CRPC); el resto → **oblea** (REV. ANUAL). NO hace falta el detalle de cilindros (ES-12) para esto. Se generan **dos tandas** de archivos: `obleas-*` y `ph-*`.
+`tipoGestion(r)`: manda el vencimiento de la PH (`_tipoVencimiento`); sin dato de cilindros, `UCODGEST === 'X'` → PH. Ver *"El ZIP y la inyección se separan por el MISMO campo"*. Se generan **dos tandas** de archivos: `obleas-*` y `ph-*`.
 
 ### Export limpio para ManyChat (`dividirArchivos`)
 - Columnas: **`nombre;marca;modelo;patente;telefono`** (UAPEYNOM, UMARCA, UMODELO, UDOMINIO, WhatsApp 549…).
@@ -465,18 +465,20 @@ Al importar desde InfoSys, cada contacto se clasifica según la **PH más cercan
 
 **Caso real (OB-10):** `9-2026` se importó antes del fix de cilindros de ES-33 (3/9 19:36) y quedó con la PH contaminada; se re-guardó el 8/9 (v3) y **siguió mostrando lo viejo**. Medido contra la base ya corregida: **122 de 554 contactos con etiqueta equivocada** — 102 `ph_urgente`→`solo_oblea`, 11 `ph_urgente`→`ph`, 9 `ph`→`solo_oblea`. **Las 122 en la misma dirección** (de más urgente a menos): es la firma del bug de cilindros ajenos, porque `phVenceDe` toma el mínimo y un cilindro ajeno más viejo sólo puede adelantar la fecha. Testigo `VSC632`: PH real 02/2028 (2 cilindros propios, CRPC SORV 02/23), guardada 08/2024.
 
-### El ZIP y la inyección NO se separan por el mismo campo
+### El ZIP y la inyección se separan por el MISMO campo (desde 2026-10-13)
 
-Confundirlos lleva a conclusiones opuestas sobre si algo está afectado por un problema de datos de PH:
+Hasta el 13/10/2026 el ZIP cortaba por `_tipoGestion` (`UCODGEST='X'`, el trámite del año anterior) y la inyección por
+`_tipoVencimiento` (cuándo vence la PH). Eran dos cortes distintos de la misma gente, y el del ZIP estaba mal para una campaña:
+**quien hizo la PH el año pasado salía como "PH a vencer" con la PH vigente hasta 5 años después** (caso `AA024YC`, CRPC
+10/2025 → vence 10/2030). En octubre 2026 eran 108 contactos.
 
-| | ZIP (descarga manual) | Inyección a ManyChat / export OB-4 |
-|---|---|---|
-| Campo | `_tipoGestion` — `UCODGEST='X'` | `_tipoVencimiento` — cilindros `CUPH*` |
-| Significa | qué trámite de ENARGAS vence | cuándo vence la prueba hidráulica |
-| ¿Lo toca un problema de cilindros? | **No** | **Sí** |
-| Salida | `obleas/obleas-<per>-N.csv` · `ph/ph-<per>-N.csv` | tags `Nova Obleas` / `Nova PH` / `Nova PH Urgente` |
+**Regla actual (pedido de Ariel):** `tipoGestion(r)` en `lib/procesar.js` usa primero `_tipoVencimiento`:
+`ph_urgente` y `ph` → lista PH; `solo_oblea` → obleas. **Solo sin dato de cilindros** (período por CSV, `ph_desconocido`)
+vuelve al criterio viejo (`_tipoGestion` / `UCODGEST`). Medido en octubre 2026: 108 pasaron de PH a obleas y 123 de obleas a
+PH (= 63 `ph_urgente` + 60 `ph`, lo mismo que la inyección). **No volver a cortar el ZIP por el trámite.**
 
-El ZIP sale de `dividirArchivos` → `tipoGestion(r)` (lib/procesar.js), que sólo mira `UCODGEST`, y sus columnas son `nombre;marca;modelo;patente;telefono` — **no lleva ninguna marca de urgencia**. Septiembre 2026, los mismos 541 contactos: el ZIP los parte en **443 obleas / 98 PH**; la inyección, en **182 ph_urgente / 47 ph / 312 solo_oblea**. Son dos cortes distintos de la misma gente, no dos versiones del mismo corte.
+El ZIP sigue sin llevar marca de urgencia (columnas `nombre;marca;modelo;patente;telefono`): PH urgente y PH van juntos en
+`ph-*`. Para separarlos, la inyección.
 
 ### Corregir un período ya inyectado: el inyector no sabe QUITAR tags
 
@@ -597,6 +599,27 @@ y llamar, con tipificación de la llamada.
 5. **Sincronizar estructura local ↔ S18** — evaluar deploy script o GitHub Action (hoy es scp + rebuild manual).
 6. **Migrar a la fuente única de talleres cuando exista (encargo `CEO-84`)** — hoy `TALLERES_PROPIOS` es una lista fija, y el código de taller de ENARGAS **no es estable** (ver el hallazgo de 2026-08-18 más abajo). Cuando el CEO defina la identidad única de talleres en `cdp_nova`, hay que sacar la lista de `procesar.js` y consumir esa fuente. Hasta entonces la lista es correcta pero frágil: se rompe en silencio si ENARGAS recodifica un taller nuestro.
 7. **`verificar.js` legacy** — no hardcodea talleres: usa `config.talleresPropios` (default del endpoint `/api/config` en server.js, hoy `IRT0550, HIT0797, QUT0856`). Si hay un `data/config.json` guardado en S18 con la lista vieja, **ese archivo pisa el default** — revisarlo tras un cambio de talleres.
+
+### Estado al cierre 2026-10-13 — Lista PH por vencimiento, errores visibles en la verificación, OB-13
+
+Todo publicado en S18 el 13/10 y verificado por md5 dentro del contenedor. Commits `d72f02a`, `d269f81` y el de la lista PH.
+
+1. **Lista PH = PH por vencer.** Ver la sección *"El ZIP y la inyección se separan por el MISMO campo"*.
+2. **Verificación: un dato dudoso es ERROR, nunca "No Renovó"** (regla de Ariel). En `lib/clasificar-lote.js`: "No Renovó"
+   solo con código 2 explícito. Respuesta vacía, código 1, 3 o desconocido → `ERROR_TECNICO` (contador + botón Reintentar);
+   código 6 → `FORMATO_INVALIDO`. `kpiMes` agrega `dudosos` aparte; los números de "no" del KPI no cambiaron.
+   Agosto y septiembre no tenían ningún caso dudoso, así que sus reportes no cambian.
+3. **OB-13 hecho** (timeout del lote). Detalle en `../encargos/hechos/2026-10-13-OB-13-...-DONE.md`. Lo importante para el
+   próximo: **un job "completado" se reusa solo si es más nuevo que la última verificación guardada**; si no, el reporte se
+   congela (el id del job es siempre el mismo). Corte a las 3 h → se guarda `verificacion.parcial` y se avisa.
+4. **Verificación de las PH de octubre 2026:** los vencimientos que calcula `phVenceDe` (cilindros de `nova_operaciones`)
+   coinciden con el escáner (`historial_obleas_datos`) en 1573 de 1577 patentes, y 35 de 35 contra ENARGAS en vivo.
+   Las 4 que difieren están en **ES-49** (Enargas Scrap). Por indicación del CEO no reciben aviso de PH hasta verificarse;
+   hoy ya no lo reciben (2 son `solo_oblea` y 2 no están en el período).
+5. **Septiembre: los 148 "No Renovó" son reales** — ninguno tiene operación posterior en `nova_operaciones` ni oblea más
+   nueva en el escáner.
+6. ⚠️ **La PH NO sale de `vw_ph_por_patente`**, aunque la revisión del CEO de ES-49 lo dice: la app la calcula en
+   `server.js` (`phVenceDe`) desde `nova_operaciones.datos_raw._cilindros`. Avisado al CEO.
 
 ### Estado 2026-10-05 — Historia del año (última hoja del PDF de verificación) + PDF rehecho
 
